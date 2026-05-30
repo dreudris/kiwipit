@@ -8,38 +8,32 @@ const CHAINS = {
   },
   eth: {
     name: 'Ethereum',     symbol: 'ETH',  color: '#627eea', icon: 'Ξ',
-    decimals: 18, cgId: 'ethereum',
-    rpcUrl: 'https://eth.llamarpc.com',
+    decimals: 18, cgId: 'ethereum', evmKey: 'eth',
     explorer: { tx: 'https://etherscan.io/tx/', addr: 'https://etherscan.io/address/' },
   },
   bnb: {
     name: 'BNB Chain',    symbol: 'BNB',  color: '#f3ba2f', icon: 'B',
-    decimals: 18, cgId: 'binancecoin',
-    rpcUrl: 'https://bsc-dataseed.binance.org',
+    decimals: 18, cgId: 'binancecoin', evmKey: 'bnb',
     explorer: { tx: 'https://bscscan.com/tx/', addr: 'https://bscscan.com/address/' },
   },
   matic: {
     name: 'Polygon',      symbol: 'POL',  color: '#8247e5', icon: 'P',
-    decimals: 18, cgId: 'matic-network',
-    rpcUrl: 'https://polygon-rpc.com',
+    decimals: 18, cgId: 'matic-network', evmKey: 'matic',
     explorer: { tx: 'https://polygonscan.com/tx/', addr: 'https://polygonscan.com/address/' },
   },
   avax: {
     name: 'Avalanche',    symbol: 'AVAX', color: '#e84142', icon: 'A',
-    decimals: 18, cgId: 'avalanche-2',
-    rpcUrl: 'https://api.avax.network/ext/bc/C/rpc',
+    decimals: 18, cgId: 'avalanche-2', evmKey: 'avax',
     explorer: { tx: 'https://snowtrace.io/tx/', addr: 'https://snowtrace.io/address/' },
   },
   arb: {
     name: 'Arbitrum',     symbol: 'ETH',  color: '#28a0f0', icon: 'Ↄ',
-    decimals: 18, cgId: 'ethereum',
-    rpcUrl: 'https://arb1.arbitrum.io/rpc',
+    decimals: 18, cgId: 'ethereum', evmKey: 'arb',
     explorer: { tx: 'https://arbiscan.io/tx/', addr: 'https://arbiscan.io/address/' },
   },
   op: {
     name: 'Optimism',     symbol: 'ETH',  color: '#ff0420', icon: 'O',
-    decimals: 18, cgId: 'ethereum',
-    rpcUrl: 'https://mainnet.optimism.io',
+    decimals: 18, cgId: 'ethereum', evmKey: 'op',
     explorer: { tx: 'https://optimistic.etherscan.io/tx/', addr: 'https://optimistic.etherscan.io/address/' },
   },
   ltc: {
@@ -85,6 +79,38 @@ const CHAINS = {
 
 // EVM chains that share the 0x address format
 const EVM_CHAINS = ['eth', 'bnb', 'matic', 'avax', 'arb', 'op'];
+
+// Multiple public RPC endpoints per EVM chain — tried in order until one succeeds
+const EVM_RPCS = {
+  eth:   [
+    'https://cloudflare-eth.com',
+    'https://rpc.ankr.com/eth',
+    'https://ethereum.publicnode.com',
+    'https://eth.llamarpc.com',
+  ],
+  bnb:   [
+    'https://bsc-dataseed.binance.org',
+    'https://bsc-dataseed1.defibit.io',
+    'https://rpc.ankr.com/bsc',
+  ],
+  matic: [
+    'https://polygon-rpc.com',
+    'https://rpc.ankr.com/polygon',
+    'https://polygon.publicnode.com',
+  ],
+  avax:  [
+    'https://api.avax.network/ext/bc/C/rpc',
+    'https://rpc.ankr.com/avalanche',
+  ],
+  arb:   [
+    'https://arb1.arbitrum.io/rpc',
+    'https://rpc.ankr.com/arbitrum',
+  ],
+  op:    [
+    'https://mainnet.optimism.io',
+    'https://rpc.ankr.com/optimism',
+  ],
+};
 
 // ─── Prices ───────────────────────────────────────────────────────────────────
 
@@ -226,20 +252,31 @@ async function apiBtcXpub(xpub) {
   };
 }
 
-// ─── API: EVM chains (public JSON-RPC eth_getBalance) ────────────────────────
+// ─── API: EVM chains (public JSON-RPC eth_getBalance with fallbacks) ─────────
 
-async function apiEvmBalance(rpcUrl, addr) {
-  const r = await fetch(rpcUrl, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ jsonrpc: '2.0', method: 'eth_getBalance', params: [addr, 'latest'], id: 1 }),
-  });
-  if (!r.ok) throw new Error('RPC request failed.');
-  const d = await r.json();
-  if (d.error) throw new Error(d.error.message || 'RPC error.');
-  // hex → BigInt → divide avoiding float overflow
-  const wei = BigInt(d.result);
-  return Number(wei / 1000n) / 1e15;   // wei/1000 keeps us in safe int range, then /1e15 = /1e18
+async function apiEvmBalance(evmKey, addr) {
+  const rpcs = EVM_RPCS[evmKey] ?? [];
+  let lastErr = new Error('No RPC endpoints configured.');
+
+  for (const url of rpcs) {
+    try {
+      const r = await fetch(url, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ jsonrpc: '2.0', method: 'eth_getBalance', params: [addr, 'latest'], id: 1 }),
+      });
+      if (!r.ok) { lastErr = new Error(`HTTP ${r.status} from ${url}`); continue; }
+      const d = await r.json();
+      if (d.error) { lastErr = new Error(d.error.message || 'RPC error.'); continue; }
+      // hex string → BigInt → ETH float (avoids JS Number overflow for large wei values)
+      const wei = BigInt(d.result);
+      return Number(wei / 1000n) / 1e15;
+    } catch (e) {
+      lastErr = e;  // network / CORS error — try next endpoint
+    }
+  }
+
+  throw new Error(`Could not reach the ${evmKey.toUpperCase()} network. All RPC endpoints failed. (${lastErr.message})`);
 }
 
 // ─── API: Blockchair multi-chain ──────────────────────────────────────────────
@@ -528,8 +565,8 @@ async function lookupChain(rawInput, chainKey) {
   }
 
   // ── EVM RPC chains (ETH, BNB, MATIC, AVAX, ARB, OP) ──
-  if (c.rpcUrl) {
-    const balEth = await apiEvmBalance(c.rpcUrl, input);
+  if (c.evmKey) {
+    const balEth = await apiEvmBalance(c.evmKey, input);
     // Convert float ETH to raw units for unified fmtAmount
     const balRaw = Math.round(balEth * Math.pow(10, c.decimals));
     renderBalance(balRaw, chainKey);
