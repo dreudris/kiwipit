@@ -53,13 +53,13 @@ render*() functions         — write directly into DOM elements by ID
 | Avalanche | `0x…` + network tab | Routescan (chain 43114) | ✓ full |
 | Arbitrum | `0x…` + network tab | Routescan (chain 42161) | ✓ full |
 | Optimism | `0x…` + network tab | Routescan (chain 10) | ✓ full |
-| Litecoin (LTC) | `L…` `M…` `ltc1…` | blockchair | explorer link |
-| Dogecoin (DOGE) | `D…` | blockchair | explorer link |
-| Bitcoin Cash (BCH) | `q…` `p…` cashaddr | blockchair | explorer link |
-| Dash (DASH) | `X…` | blockchair | explorer link |
-| Tron (TRX) | `T…` | TronGrid | ✓ simplified |
-| XRP | `r…` | XRPL cluster | ✓ simplified |
-| Solana (SOL) | base58 32-44 chars | Solana public RPC | ✓ signatures |
+| Litecoin (LTC) | `L…` `M…` `ltc1…` | blockchair | ✓ full (10 txs) |
+| Dogecoin (DOGE) | `D…` | blockchair | ✓ full (10 txs) |
+| Bitcoin Cash (BCH) | `q…` `p…` cashaddr | blockchair | ✓ full (10 txs) |
+| Dash (DASH) | `X…` | blockchair | ✓ full (10 txs) |
+| Tron (TRX) | `T…` | TronGrid | ✓ full (20 txs) |
+| XRP | `r…` | XRPL cluster | ✓ full (20 txs) |
+| Solana (SOL) | base58 32-44 chars | Solana public RPC | ✓ full (50 sigs, 10 with amounts) |
 
 All APIs are free, no API key required. CoinGecko provides USD prices for all chains in one batch request (failure is silent).
 
@@ -76,10 +76,11 @@ All APIs are free, no API key required. CoinGecko provides USD prices for all ch
 
 - **`--accent` CSS variable** is set per-chain on `<html>` so all accent colors (balance, hover states, spinner) automatically match the selected chain.
 - **EVM address ambiguity**: a `0x` address works on all EVM networks; the app shows a network-selector tab row when one is detected. Active selection is tracked in `activeEvmChain`.
-- **EVM RPC fallback chain**: `apiEvmBalance` iterates `EVM_RPCS[evmKey]` until one succeeds, so adding more fallback endpoints is the fix for flaky chains.
-- **EVM tx list**: `apiEvmFull` calls Routescan's Etherscan-compat API (`api.routescan.io/v2/network/mainnet/evm/{chainId}/etherscan/api`). Each EVM chain in `CHAINS` has a `routescanId`. `apiEvmBalance` (direct RPC) is kept as dead code for reference.
+- **EVM RPC fallback chain**: `apiEvmBalance` iterates `EVM_RPCS[evmKey]` until one succeeds (kept as dead code; `apiEvmFull` via Routescan is the live path).
+- **EVM tx list**: `apiEvmFull` calls Routescan's Etherscan-compat API (`api.routescan.io/v2/network/mainnet/evm/{chainId}/etherscan/api`). Each EVM chain in `CHAINS` has a `routescanId`.
 - **EVM balance/value precision**: wei strings converted via `BigInt` to avoid float overflow: `Math.round(Number(wei / 1000n) / 1e15 * 10^decimals)`.
-- **Solana tx amounts**: `apiSol` fetches up to 10 `getTransaction` calls in parallel after `getSignaturesForAddress`; net lamport change is computed from `preBalances`/`postBalances` at the address's account index.
+- **Blockchair tx list**: `apiBlockchair` fetches the address dashboard (returns up to 100 tx hashes), then batch-fetches the first 10 via `/dashboards/transactions/{hashes}`; `renderBlockchairTxs` computes net +/− from `inputs[].recipient` / `outputs[].recipient` like Bitcoin.
+- **Solana RPC fallback**: `SOL_RPCS` tries `publicnode → ankr → mainnet-beta` in order. `getSignaturesForAddress` is called sequentially after `getBalance` so an error (e.g. RPC doesn't index transactions) triggers fallback to the next endpoint. `getTransaction` calls (up to 10 in parallel) catch individually and fall back to `—` amounts.
 - **Tron direction**: TronGrid returns hex addresses (`41…`) on `acct.address`; `renderTrxTxs` compares `owner_address`/`to_address` against this hex value to determine send/receive.
 
 ## Deployment
