@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KiwiPit — Bitcoin Wallet Viewer</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <header class="header">
+      <div class="brand">
+        <span class="brand-icon">₿</span>
+        <span class="brand-name">KiwiPit</span>
+      </div>
+      <p class="brand-tagline">Bitcoin Wallet Viewer</p>
+    </header>
+
+    <main class="main">
+
+      <div class="search-box">
+        <div class="search-row">
+          <input
+            type="text"
+            id="addressInput"
+            class="search-input"
+            placeholder="Bitcoin address (1… / 3… / bc1…) or xpub / ypub / zpub"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="lookupBtn" class="search-btn">Look up</button>
+        </div>
+        <p class="search-hint">
+          On SafePal S1: open the Bitcoin wallet → tap <strong>Receive</strong> → copy the address shown.
+        </p>
+      </div>
+
+      <div id="loading" class="loading hidden">
+        <div class="spinner"></div>
+        <span>Fetching blockchain data…</span>
+      </div>
+
+      <div id="error" class="error-box hidden"></div>
+
+      <div id="results" class="results hidden">
+
+        <p class="address-label" id="addressLabel"></p>
+
+        <div class="balance-card">
+          <span class="balance-label">Balance</span>
+          <span id="balanceBtc" class="balance-btc">0 BTC</span>
+          <span id="balanceUsd" class="balance-usd"></span>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-card">
+            <span class="stat-label">Total Received</span>
+            <span id="statReceived" class="stat-value green">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Total Sent</span>
+            <span id="statSent" class="stat-value red">—</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Transactions</span>
+            <span id="statTxCount" class="stat-value">—</span>
+          </div>
+        </div>
+
+        <div class="tx-section">
+          <h2 class="tx-header">Recent Transactions</h2>
+          <div id="txList"></div>
+        </div>
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      Data provided by <a href="https://mempool.space" target="_blank" rel="noopener">mempool.space</a>
+      &amp; <a href="https://coingecko.com" target="_blank" rel="noopener">CoinGecko</a>
+    </footer>
+
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
