@@ -319,13 +319,32 @@ async function apiBlockchair(blockchairKey, addr) {
   if (!r.ok) throw new Error(`Address not found on ${blockchairKey}.`);
   const d = await r.json();
   if (d.context?.code !== 200) throw new Error(d.context?.error || 'Blockchair error.');
-  const info = d.data[addr]?.address ?? d.data[addr.toLowerCase()]?.address;
-  if (!info) throw new Error('Address not found.');
+  const addrData = d.data[addr] ?? d.data[addr.toLowerCase()];
+  if (!addrData) throw new Error('Address not found.');
+  const info     = addrData.address;
+  const txHashes = addrData.transactions ?? [];
+
+  // Batch-fetch first 10 transaction details for amounts and dates
+  let txs = [];
+  if (txHashes.length > 0) {
+    try {
+      const batch  = txHashes.slice(0, 10).join(',');
+      const txRes  = await fetch(`https://api.blockchair.com/${blockchairKey}/dashboards/transactions/${batch}`);
+      if (txRes.ok) {
+        const txData = await txRes.json();
+        txs = txHashes.slice(0, 10)
+          .map(hash => txData.data?.[hash] ? { hash, ...txData.data[hash] } : null)
+          .filter(Boolean);
+      }
+    } catch { /* txs stays empty — explorer fallback shown */ }
+  }
+
   return {
     balance:  info.balance  ?? 0,
     received: info.received ?? 0,
     spent:    info.spent    ?? 0,
     txCount:  info.transaction_count ?? 0,
+    txs,
   };
 }
 
@@ -399,12 +418,12 @@ async function apiSol(addr) {
         return r.json();
       });
 
-      const [balRes, sigRes] = await Promise.all([
-        post('getBalance',              [addr]),
-        post('getSignaturesForAddress', [addr, { limit: 20 }]),
-      ]);
-
+      // Sequential calls so an error on sigs triggers fallback to next RPC
+      const balRes = await post('getBalance', [addr]);
       if (balRes.error) throw new Error(balRes.error.message || 'Solana RPC error.');
+
+      const sigRes = await post('getSignaturesForAddress', [addr, { limit: 50 }]);
+      if (sigRes.error) throw new Error(sigRes.error.message || 'Transaction history unavailable on this RPC.');
 
       const sigs = sigRes.result ?? [];
 
@@ -507,6 +526,40 @@ function renderBtcTxs(txs, addr, chain) {
   <div class="tx-right">
     <div class="tx-amount ${cls}">${absNet !== null ? prefix + fmtAmount(absNet, c.decimals, c.symbol) : '—'}</div>
     <div class="tx-usd">${absNet !== null ? fmtUsd(absNet, c.decimals, c.cgId) : ''}</div>
+  </div>
+</div>`;
+  }).join('');
+}
+
+// Blockchair chains (LTC, DOGE, BCH, DASH): net-per-address tx list
+function renderBlockchairTxs(txs, addr, chain) {
+  const c    = CHAINS[chain];
+  const list = document.getElementById('txList');
+  if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
+
+  list.innerHTML = txs.map(({ hash, transaction: txData, inputs = [], outputs = [] }) => {
+    let received = 0, sent = 0;
+    for (const o of outputs) if (o.recipient === addr) received += o.value;
+    for (const i of inputs)  if (i.recipient === addr) sent     += i.value;
+
+    const net       = received - sent;
+    const absNet    = Math.abs(net);
+    const cls       = net > 0 ? 'positive' : net < 0 ? 'negative' : 'neutral';
+    const prefix    = net > 0 ? '+' : net < 0 ? '−' : '';
+    const confirmed = (txData?.block_id ?? 0) > 0;
+    const ts        = txData?.time
+      ? Math.floor(new Date(txData.time.replace(' ', 'T') + 'Z').getTime() / 1000)
+      : 0;
+
+    return `<div class="tx-item">
+  <div>
+    <a class="tx-id" href="${c.explorer.tx}${hash}" target="_blank" rel="noopener">${shortId(hash)}</a>
+    <span class="tx-badge ${confirmed ? 'confirmed' : 'unconfirmed'}">${confirmed ? 'confirmed' : 'pending'}</span>
+    <div class="tx-meta">${fmtDate(ts)}</div>
+  </div>
+  <div class="tx-right">
+    <div class="tx-amount ${cls}">${prefix}${fmtAmount(absNet, c.decimals, c.symbol)}</div>
+    <div class="tx-usd">${fmtUsd(absNet, c.decimals, c.cgId)}</div>
   </div>
 </div>`;
   }).join('');
@@ -692,7 +745,7 @@ async function lookupChain(rawInput, chainKey) {
     const d = await apiBlockchair(c.blockchairKey, input);
     renderBalance(d.balance, chainKey);
     renderStats(d.received, d.spent, d.txCount, chainKey);
-    renderExplorerFallback(input, chainKey);
+    renderBlockchairTxs(d.txs, input, chainKey);
     return;
   }
 
