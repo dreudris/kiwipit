@@ -399,7 +399,7 @@ async function apiXrp(addr) {
 // ─── API: Solana (public RPC with fallbacks) ─────────────────────────────────
 
 const SOL_RPCS = [
-  '/api/solana',                   // same-origin Pages Function proxy → no browser 403
+  '/api/solana',                   // same-origin Worker proxy → no browser 403
   'https://solana.publicnode.com', // fallback (balance works, tx history may be empty)
 ];
 

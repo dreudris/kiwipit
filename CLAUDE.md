@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**KiwiPit** — a static multi-chain crypto wallet viewer deployed at [kiwipit.com](https://kiwipit.com) via Cloudflare Pages.
+**KiwiPit** — a multi-chain crypto wallet viewer deployed at [kiwipit.com](https://kiwipit.com) via Cloudflare Workers (Static Assets + a small Worker for the Solana proxy).
 
-No build step. Pure HTML/CSS/JS — edit and push to deploy.
+No build step for the frontend. Pure HTML/CSS/JS — edit and push to deploy.
 
 ## Local development
 
@@ -21,8 +21,11 @@ No install needed beyond wrangler. Alternatively, any static file server works (
 - `index.html` — single-page app shell; all DOM element IDs referenced by `app.js`
 - `style.css` — dark-theme styles; `--accent` CSS variable overridden per chain via JS
 - `app.js` — all chain logic: registry, detection, API fetchers, rendering, event wiring
-- `_headers` — Cloudflare Pages security headers (plain-text format, no closing `*/`)
-- `wrangler.jsonc` — Cloudflare Workers/Pages config; assets served from repo root
+- `worker.js` — Worker entry (`main`): routes `/api/solana` to the RPC proxy, delegates everything else to the `ASSETS` binding (static files)
+- `_headers` — security headers (plain-text format, no closing `*/`)
+- `wrangler.jsonc` — Cloudflare Workers config; `main: worker.js`, `assets.directory: "."`, `assets.binding: ASSETS`
+
+> **Deployment is Cloudflare Workers Static Assets, not Pages.** The Pages-only `functions/` directory convention does NOT work here — dynamic routes must live in `worker.js` behind the `ASSETS` binding.
 
 ## Code flow in `app.js`
 
@@ -80,9 +83,9 @@ All APIs are free, no API key required. CoinGecko provides USD prices for all ch
 - **EVM tx list**: `apiEvmFull` calls Routescan's Etherscan-compat API (`api.routescan.io/v2/network/mainnet/evm/{chainId}/etherscan/api`). Each EVM chain in `CHAINS` has a `routescanId`.
 - **EVM balance/value precision**: wei strings converted via `BigInt` to avoid float overflow: `Math.round(Number(wei / 1000n) / 1e15 * 10^decimals)`.
 - **Blockchair tx list**: `apiBlockchair` fetches the address dashboard (returns up to 100 tx hashes), then batch-fetches the first 10 via `/dashboards/transactions/{hashes}`; `renderBlockchairTxs` computes net +/− from `inputs[].recipient` / `outputs[].recipient` like Bitcoin.
-- **Solana RPC fallback**: `SOL_RPCS` tries `publicnode → ankr → mainnet-beta` in order. `getSignaturesForAddress` is called sequentially after `getBalance` so an error (e.g. RPC doesn't index transactions) triggers fallback to the next endpoint. `getTransaction` calls (up to 10 in parallel) catch individually and fall back to `—` amounts.
+- **Solana needs a server-side proxy**: every free public Solana RPC fails from a browser — `api.mainnet-beta.solana.com` returns HTTP 403 to browser requests, `solana.publicnode.com` silently returns `[]` for `getSignaturesForAddress` (no history index), and ankr/drpc/etc. require API keys. So `worker.js` exposes `/api/solana`, which forwards `getBalance`/`getSignaturesForAddress`/`getTransaction` to mainnet-beta from the edge. `SOL_RPCS` lists `/api/solana` first, then `publicnode` as a balance-only fallback. `getSignaturesForAddress` is called sequentially after `getBalance` so an error triggers fallback to the next endpoint; `getTransaction` calls (up to 10 in parallel) catch individually and fall back to `—` amounts.
 - **Tron direction**: TronGrid returns hex addresses (`41…`) on `acct.address`; `renderTrxTxs` compares `owner_address`/`to_address` against this hex value to determine send/receive.
 
 ## Deployment
 
-Cloudflare Pages auto-deploys on every push to `main`. Custom domain `kiwipit.com` is managed in the Cloudflare Pages dashboard.
+Cloudflare Workers auto-deploys on every push to `main` (Workers Builds connected to the repo). Custom domain `kiwipit.com` is managed in the Cloudflare dashboard. After deploy, verify the proxy: `curl -X POST https://kiwipit.com/api/solana -d '{"jsonrpc":"2.0","id":1,"method":"getBalance","params":["<addr>"]}'` should return JSON, not 404.
