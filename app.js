@@ -377,50 +377,69 @@ async function apiXrp(addr) {
   };
 }
 
-// ─── API: Solana (public RPC) ─────────────────────────────────────────────────
+// ─── API: Solana (public RPC with fallbacks) ─────────────────────────────────
+
+const SOL_RPCS = [
+  'https://solana.publicnode.com',
+  'https://rpc.ankr.com/solana',
+  'https://api.mainnet-beta.solana.com',
+];
 
 async function apiSol(addr) {
-  const post = (method, params) => fetch('https://api.mainnet-beta.solana.com', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  }).then(r => r.json());
+  let lastErr = new Error('No Solana RPC available.');
 
-  const [balRes, sigRes] = await Promise.all([
-    post('getBalance',               [addr]),
-    post('getSignaturesForAddress',  [addr, { limit: 20 }]),
-  ]);
+  for (const rpcUrl of SOL_RPCS) {
+    try {
+      const post = (method, params) => fetch(rpcUrl, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+      }).then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status} from ${rpcUrl}`);
+        return r.json();
+      });
 
-  if (balRes.error) throw new Error(balRes.error.message || 'Solana RPC error.');
+      const [balRes, sigRes] = await Promise.all([
+        post('getBalance',              [addr]),
+        post('getSignaturesForAddress', [addr, { limit: 20 }]),
+      ]);
 
-  const sigs = sigRes.result ?? [];
+      if (balRes.error) throw new Error(balRes.error.message || 'Solana RPC error.');
 
-  // Fetch up to 10 transaction details in parallel to compute net SOL change per tx
-  const details = await Promise.all(
-    sigs.slice(0, 10).map(s =>
-      post('getTransaction', [s.signature, { encoding: 'json', maxSupportedTransactionVersion: 0 }])
-        .catch(() => null)
-    )
-  );
+      const sigs = sigRes.result ?? [];
 
-  const txs = sigs.map((sig, i) => {
-    let netLamports = null;
-    const d = i < 10 ? details[i] : null;
-    if (d?.result) {
-      const keys = d.result.transaction?.message?.accountKeys ?? [];
-      const idx  = keys.indexOf(addr);
-      if (idx !== -1) {
-        netLamports = (d.result.meta?.postBalances?.[idx] ?? 0) -
-                      (d.result.meta?.preBalances?.[idx]  ?? 0);
-      }
+      // Fetch up to 10 transaction details in parallel to compute net SOL change per tx
+      const details = await Promise.all(
+        sigs.slice(0, 10).map(s =>
+          post('getTransaction', [s.signature, { encoding: 'json', maxSupportedTransactionVersion: 0 }])
+            .catch(() => null)
+        )
+      );
+
+      const txs = sigs.map((sig, i) => {
+        let netLamports = null;
+        const d = i < 10 ? details[i] : null;
+        if (d?.result) {
+          const keys = d.result.transaction?.message?.accountKeys ?? [];
+          const idx  = keys.indexOf(addr);
+          if (idx !== -1) {
+            netLamports = (d.result.meta?.postBalances?.[idx] ?? 0) -
+                          (d.result.meta?.preBalances?.[idx]  ?? 0);
+          }
+        }
+        return { ...sig, netLamports };
+      });
+
+      return {
+        balance: balRes.result?.value ?? 0,
+        txs,
+      };
+    } catch (e) {
+      lastErr = e;
     }
-    return { ...sig, netLamports };
-  });
+  }
 
-  return {
-    balance: balRes.result?.value ?? 0,
-    txs,
-  };
+  throw new Error(`Solana lookup failed. All RPC endpoints blocked. (${lastErr.message})`);
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
