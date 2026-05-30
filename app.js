@@ -8,32 +8,32 @@ const CHAINS = {
   },
   eth: {
     name: 'Ethereum',     symbol: 'ETH',  color: '#627eea', icon: 'Ξ',
-    decimals: 18, cgId: 'ethereum', evmKey: 'eth',
+    decimals: 18, cgId: 'ethereum', evmKey: 'eth', routescanId: 1,
     explorer: { tx: 'https://etherscan.io/tx/', addr: 'https://etherscan.io/address/' },
   },
   bnb: {
     name: 'BNB Chain',    symbol: 'BNB',  color: '#f3ba2f', icon: 'B',
-    decimals: 18, cgId: 'binancecoin', evmKey: 'bnb',
+    decimals: 18, cgId: 'binancecoin', evmKey: 'bnb', routescanId: 56,
     explorer: { tx: 'https://bscscan.com/tx/', addr: 'https://bscscan.com/address/' },
   },
   matic: {
     name: 'Polygon',      symbol: 'POL',  color: '#8247e5', icon: 'P',
-    decimals: 18, cgId: 'matic-network', evmKey: 'matic',
+    decimals: 18, cgId: 'matic-network', evmKey: 'matic', routescanId: 137,
     explorer: { tx: 'https://polygonscan.com/tx/', addr: 'https://polygonscan.com/address/' },
   },
   avax: {
     name: 'Avalanche',    symbol: 'AVAX', color: '#e84142', icon: 'A',
-    decimals: 18, cgId: 'avalanche-2', evmKey: 'avax',
+    decimals: 18, cgId: 'avalanche-2', evmKey: 'avax', routescanId: 43114,
     explorer: { tx: 'https://snowtrace.io/tx/', addr: 'https://snowtrace.io/address/' },
   },
   arb: {
     name: 'Arbitrum',     symbol: 'ETH',  color: '#28a0f0', icon: 'Ↄ',
-    decimals: 18, cgId: 'ethereum', evmKey: 'arb',
+    decimals: 18, cgId: 'ethereum', evmKey: 'arb', routescanId: 42161,
     explorer: { tx: 'https://arbiscan.io/tx/', addr: 'https://arbiscan.io/address/' },
   },
   op: {
     name: 'Optimism',     symbol: 'ETH',  color: '#ff0420', icon: 'O',
-    decimals: 18, cgId: 'ethereum', evmKey: 'op',
+    decimals: 18, cgId: 'ethereum', evmKey: 'op', routescanId: 10,
     explorer: { tx: 'https://optimistic.etherscan.io/tx/', addr: 'https://optimistic.etherscan.io/address/' },
   },
   ltc: {
@@ -136,14 +136,14 @@ function fmtAmount(raw, decimals, symbol) {
   if (raw === null || raw === undefined) return '—';
   const n = raw / Math.pow(10, decimals);
   const s = n.toFixed(decimals).replace(/\.?0+$/, '');
-  return (s || '0') + ' ' + symbol;
+  return (s || '0') + ' ' + symbol;
 }
 
 function fmtUsd(raw, decimals, cgId) {
   const p = priceUsd(cgId);
   if (!p || !raw) return '';
   const usd = (raw / Math.pow(10, decimals)) * p;
-  return '≈ $' + usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return '≈ $' + usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtDate(ts) {
@@ -252,7 +252,40 @@ async function apiBtcXpub(xpub) {
   };
 }
 
-// ─── API: EVM chains (public JSON-RPC eth_getBalance with fallbacks) ─────────
+// ─── API: EVM full (Routescan Etherscan-compat: balance + txlist) ─────────────
+
+async function apiEvmFull(chainKey, addr) {
+  const c    = CHAINS[chainKey];
+  const base = `https://api.routescan.io/v2/network/mainnet/evm/${c.routescanId}/etherscan/api`;
+
+  const [balRes, txRes] = await Promise.all([
+    fetch(`${base}?module=account&action=balance&address=${addr}`).then(r => r.json()),
+    fetch(`${base}?module=account&action=txlist&address=${addr}&sort=desc&page=1&offset=25`).then(r => r.json()),
+  ]);
+
+  if (balRes.status !== '1') throw new Error(`${c.name} address not found.`);
+
+  const weiBalance = BigInt(balRes.result || '0');
+  const balanceRaw = Math.round(Number(weiBalance / 1000n) / 1e15 * Math.pow(10, c.decimals));
+
+  const txList = Array.isArray(txRes.result) ? txRes.result : [];
+  return {
+    balanceRaw,
+    txs: txList.map(tx => {
+      const weiVal = BigInt(tx.value || '0');
+      return {
+        hash:      tx.hash,
+        timestamp: Number(tx.timeStamp),
+        valueRaw:  Math.round(Number(weiVal / 1000n) / 1e15 * Math.pow(10, c.decimals)),
+        fromAddr:  (tx.from || '').toLowerCase(),
+        toAddr:    (tx.to   || '').toLowerCase(),
+        isError:   tx.isError === '1',
+      };
+    }),
+  };
+}
+
+// ─── API: EVM balance-only fallback (public JSON-RPC eth_getBalance) ──────────
 
 async function apiEvmBalance(evmKey, addr) {
   const rpcs = EVM_RPCS[evmKey] ?? [];
@@ -313,6 +346,7 @@ async function apiTrx(addr) {
     balance: acct.balance ?? 0,   // SUN (10^6 = 1 TRX)
     txCount: acct.trc20?.length ?? 0,
     txs:     txData.data ?? [],
+    hexAddr: acct.address ?? '',   // hex "41…" address for direction comparison
   };
 }
 
@@ -358,9 +392,34 @@ async function apiSol(addr) {
   ]);
 
   if (balRes.error) throw new Error(balRes.error.message || 'Solana RPC error.');
+
+  const sigs = sigRes.result ?? [];
+
+  // Fetch up to 10 transaction details in parallel to compute net SOL change per tx
+  const details = await Promise.all(
+    sigs.slice(0, 10).map(s =>
+      post('getTransaction', [s.signature, { encoding: 'json', maxSupportedTransactionVersion: 0 }])
+        .catch(() => null)
+    )
+  );
+
+  const txs = sigs.map((sig, i) => {
+    let netLamports = null;
+    const d = i < 10 ? details[i] : null;
+    if (d?.result) {
+      const keys = d.result.transaction?.message?.accountKeys ?? [];
+      const idx  = keys.indexOf(addr);
+      if (idx !== -1) {
+        netLamports = (d.result.meta?.postBalances?.[idx] ?? 0) -
+                      (d.result.meta?.preBalances?.[idx]  ?? 0);
+      }
+    }
+    return { ...sig, netLamports };
+  });
+
   return {
-    balance: balRes.result?.value ?? 0,   // lamports (10^9 = 1 SOL)
-    sigs:    sigRes.result ?? [],
+    balance: balRes.result?.value ?? 0,
+    txs,
   };
 }
 
@@ -434,23 +493,53 @@ function renderBtcTxs(txs, addr, chain) {
   }).join('');
 }
 
-// TRX: transaction list from TronGrid
-function renderTrxTxs(txs, addr, chain) {
+// EVM: full transaction list (Routescan / Etherscan-compat)
+function renderEvmTxs(txs, addr, chain) {
+  const c    = CHAINS[chain];
+  const list = document.getElementById('txList');
+  if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
+
+  const addrLower = addr.toLowerCase();
+  list.innerHTML = txs.map(tx => {
+    const isSend    = tx.fromAddr === addrLower;
+    const isReceive = tx.toAddr   === addrLower;
+    const cls    = tx.isError ? 'neutral' : isSend && !isReceive ? 'negative' : isReceive && !isSend ? 'positive' : 'neutral';
+    const prefix = cls === 'negative' ? '−' : cls === 'positive' ? '+' : '';
+    const badge  = tx.isError ? 'failed' : 'confirmed';
+
+    return `<div class="tx-item">
+  <div>
+    <a class="tx-id" href="${c.explorer.tx}${tx.hash}" target="_blank" rel="noopener">${shortId(tx.hash)}</a>
+    <span class="tx-badge ${badge}">${badge}</span>
+    <div class="tx-meta">${fmtDate(tx.timestamp)}</div>
+  </div>
+  <div class="tx-right">
+    <div class="tx-amount ${cls}">${prefix}${fmtAmount(tx.valueRaw, c.decimals, c.symbol)}</div>
+    <div class="tx-usd">${fmtUsd(tx.valueRaw, c.decimals, c.cgId)}</div>
+  </div>
+</div>`;
+  }).join('');
+}
+
+// TRX: transaction list from TronGrid (direction via hex address comparison)
+function renderTrxTxs(txs, hexAddr, chain) {
   const c    = CHAINS[chain];
   const list = document.getElementById('txList');
   if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
   list.innerHTML = txs.map(tx => {
-    const contract = tx.raw_data?.contract?.[0];
-    const val      = contract?.parameter?.value ?? {};
-    const amount   = val.amount ?? 0;                // in SUN
-    const toHex    = val.to_address ?? '';
-    const fromHex  = val.owner_address ?? '';
-    // TronGrid returns hex addresses prefixed with "41"
-    const addrHex  = addr;  // user input is Base58, comparison unreliable; show direction from contract type
-    const type     = contract?.type ?? '';
-    const status   = tx.ret?.[0]?.contractRet ?? 'UNKNOWN';
-    const ts       = tx.block_timestamp ? tx.block_timestamp / 1000 : 0;
+    const contract  = tx.raw_data?.contract?.[0];
+    const val       = contract?.parameter?.value ?? {};
+    const amount    = val.amount ?? 0;
+    const ownerAddr = val.owner_address ?? '';
+    const toAddr    = val.to_address    ?? '';
+    const isSend    = hexAddr && ownerAddr === hexAddr;
+    const isReceive = hexAddr && toAddr    === hexAddr;
+    const type      = contract?.type ?? '';
+    const status    = tx.ret?.[0]?.contractRet ?? 'UNKNOWN';
+    const ts        = tx.block_timestamp ? tx.block_timestamp / 1000 : 0;
+    const cls       = isSend && !isReceive ? 'negative' : isReceive && !isSend ? 'positive' : 'neutral';
+    const prefix    = cls === 'negative' ? '−' : cls === 'positive' ? '+' : '';
 
     return `<div class="tx-item">
   <div>
@@ -459,7 +548,7 @@ function renderTrxTxs(txs, addr, chain) {
     <div class="tx-meta">${fmtDate(ts)} · ${type}</div>
   </div>
   <div class="tx-right">
-    <div class="tx-amount neutral">${fmtAmount(amount, c.decimals, c.symbol)}</div>
+    <div class="tx-amount ${cls}">${prefix}${fmtAmount(amount, c.decimals, c.symbol)}</div>
     <div class="tx-usd">${fmtUsd(amount, c.decimals, c.cgId)}</div>
   </div>
 </div>`;
@@ -500,22 +589,28 @@ function renderXrpTxs(txs, addr, chain) {
   }).join('');
 }
 
-// Solana: recent signature list (no amount — needs separate tx fetch per sig)
-function renderSolSigs(sigs, chain) {
+// Solana: recent transactions with net SOL change per address
+function renderSolTxs(txs, chain) {
   const c    = CHAINS[chain];
   const list = document.getElementById('txList');
-  if (!sigs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
+  if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
-  list.innerHTML = sigs.map(s => {
-    const ok = !s.err;
+  list.innerHTML = txs.map(tx => {
+    const ok     = !tx.err;
+    const net    = tx.netLamports;
+    const absNet = net !== null ? Math.abs(net) : null;
+    const cls    = net === null ? 'neutral' : net > 0 ? 'positive' : net < 0 ? 'negative' : 'neutral';
+    const prefix = net > 0 ? '+' : net < 0 ? '−' : '';
+
     return `<div class="tx-item">
   <div>
-    <a class="tx-id" href="${c.explorer.tx}${s.signature}" target="_blank" rel="noopener">${shortId(s.signature)}</a>
+    <a class="tx-id" href="${c.explorer.tx}${tx.signature}" target="_blank" rel="noopener">${shortId(tx.signature)}</a>
     <span class="tx-badge ${ok ? 'confirmed' : 'failed'}">${ok ? 'confirmed' : 'failed'}</span>
-    <div class="tx-meta">${fmtDate(s.blockTime)}</div>
+    <div class="tx-meta">${fmtDate(tx.blockTime)}</div>
   </div>
   <div class="tx-right">
-    <div class="tx-amount neutral">—</div>
+    <div class="tx-amount ${cls}">${absNet !== null ? prefix + fmtAmount(absNet, c.decimals, c.symbol) : '—'}</div>
+    <div class="tx-usd">${absNet !== null ? fmtUsd(absNet, c.decimals, c.cgId) : ''}</div>
   </div>
 </div>`;
   }).join('');
@@ -542,8 +637,8 @@ async function lookupChain(rawInput, chainKey) {
   setChainTheme(chainKey);
   renderChainHeader(chainKey, input);
 
-  const statsRow = document.getElementById('statsRow');
-  const txSection = document.getElementById('txSection');
+  const statsRow   = document.getElementById('statsRow');
+  const txSection  = document.getElementById('txSection');
   statsRow.classList.remove('hidden');
   txSection.classList.remove('hidden');
 
@@ -564,15 +659,12 @@ async function lookupChain(rawInput, chainKey) {
     return;
   }
 
-  // ── EVM RPC chains (ETH, BNB, MATIC, AVAX, ARB, OP) ──
+  // ── EVM chains (ETH, BNB, MATIC, AVAX, ARB, OP) ──
   if (c.evmKey) {
-    const balEth = await apiEvmBalance(c.evmKey, input);
-    // Convert float ETH to raw units for unified fmtAmount
-    const balRaw = Math.round(balEth * Math.pow(10, c.decimals));
-    renderBalance(balRaw, chainKey);
+    const d = await apiEvmFull(chainKey, input);
+    renderBalance(d.balanceRaw, chainKey);
     renderStats(null, null, null, chainKey);
-    statsRow.classList.add('hidden');
-    renderExplorerFallback(input, chainKey);
+    renderEvmTxs(d.txs, input, chainKey);
     return;
   }
 
@@ -590,7 +682,7 @@ async function lookupChain(rawInput, chainKey) {
     const d = await apiTrx(input);
     renderBalance(d.balance, 'trx');
     renderStats(null, null, d.txCount || null, 'trx');
-    renderTrxTxs(d.txs, input, 'trx');
+    renderTrxTxs(d.txs, d.hexAddr, 'trx');
     return;
   }
 
@@ -599,7 +691,6 @@ async function lookupChain(rawInput, chainKey) {
     const d = await apiXrp(input);
     renderBalance(d.balance, 'xrp');
     renderStats(null, null, null, 'xrp');
-    statsRow.classList.add('hidden');
     renderXrpTxs(d.txs, input, 'xrp');
     return;
   }
@@ -609,8 +700,7 @@ async function lookupChain(rawInput, chainKey) {
     const d = await apiSol(input);
     renderBalance(d.balance, 'sol');
     renderStats(null, null, null, 'sol');
-    statsRow.classList.add('hidden');
-    renderSolSigs(d.sigs, 'sol');
+    renderSolTxs(d.txs, 'sol');
     return;
   }
 

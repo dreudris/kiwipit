@@ -4,28 +4,55 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**KiwiPit** — a static Bitcoin wallet viewer deployed at [kiwipit.com](https://kiwipit.com) via Cloudflare Pages.
+**KiwiPit** — a static multi-chain crypto wallet viewer deployed at [kiwipit.com](https://kiwipit.com) via Cloudflare Pages.
 
 No build step. Pure HTML/CSS/JS — edit and push to deploy.
 
+## Local development
+
+```bash
+npx wrangler dev   # serves the site at localhost:8787 via wrangler.jsonc
+```
+
+No install needed beyond wrangler. Alternatively, any static file server works (`python3 -m http.server`).
+
 ## Stack
 
-- `index.html` — single-page app shell
-- `style.css` — dark-theme styles, `--accent` CSS variable overridden per chain via JS
-- `app.js` — multi-chain logic: detection, API fetchers, rendering
-- `_headers` — Cloudflare Pages security headers
+- `index.html` — single-page app shell; all DOM element IDs referenced by `app.js`
+- `style.css` — dark-theme styles; `--accent` CSS variable overridden per chain via JS
+- `app.js` — all chain logic: registry, detection, API fetchers, rendering, event wiring
+- `_headers` — Cloudflare Pages security headers (plain-text format, no closing `*/`)
+- `wrangler.jsonc` — Cloudflare Workers/Pages config; assets served from repo root
+
+## Code flow in `app.js`
+
+```
+CHAINS registry + EVM_RPCS
+   ↓
+detectChain(input)          — regex per address format, 150 ms debounced on keystroke
+   ↓
+handleLookup()              — fetches prices, resolves EVM tab, calls lookupChain()
+   ↓
+lookupChain(input, chainKey)— dispatches to the right API fetcher, then renders
+   ↓
+api*() fetchers             — one per API family (BTC, EVM RPC, Blockchair, TRX, XRP, SOL)
+   ↓
+render*() functions         — write directly into DOM elements by ID
+```
+
+`lookupChain` is the integration point: it decides which fetcher to call based on `chainKey` (or `c.evmKey` / `c.blockchairKey` presence), then calls the matching `render*` functions.
 
 ## Supported chains
 
 | Chain | Detection pattern | API | TX list? |
 |-------|------------------|-----|---------|
 | Bitcoin (BTC) | `1…` `3…` `bc1…` `xpub/ypub/zpub` | mempool.space | ✓ full |
-| Ethereum (ETH) | `0x…` + network tab | public EVM RPC (eth.llamarpc.com) | explorer link |
-| BNB Chain | `0x…` + network tab | BSC RPC (bsc-dataseed.binance.org) | explorer link |
-| Polygon | `0x…` + network tab | polygon-rpc.com | explorer link |
-| Avalanche | `0x…` + network tab | api.avax.network | explorer link |
-| Arbitrum | `0x…` + network tab | arb1.arbitrum.io/rpc | explorer link |
-| Optimism | `0x…` + network tab | mainnet.optimism.io | explorer link |
+| Ethereum (ETH) | `0x…` + network tab | Routescan (chain 1) | ✓ full |
+| BNB Chain | `0x…` + network tab | Routescan (chain 56) | ✓ full |
+| Polygon | `0x…` + network tab | Routescan (chain 137) | ✓ full |
+| Avalanche | `0x…` + network tab | Routescan (chain 43114) | ✓ full |
+| Arbitrum | `0x…` + network tab | Routescan (chain 42161) | ✓ full |
+| Optimism | `0x…` + network tab | Routescan (chain 10) | ✓ full |
 | Litecoin (LTC) | `L…` `M…` `ltc1…` | blockchair | explorer link |
 | Dogecoin (DOGE) | `D…` | blockchair | explorer link |
 | Bitcoin Cash (BCH) | `q…` `p…` cashaddr | blockchair | explorer link |
@@ -34,16 +61,27 @@ No build step. Pure HTML/CSS/JS — edit and push to deploy.
 | XRP | `r…` | XRPL cluster | ✓ simplified |
 | Solana (SOL) | base58 32-44 chars | Solana public RPC | ✓ signatures |
 
-All APIs are free and require no API key. CoinGecko provides USD prices for all chains in one batch request (failure is silent).
+All APIs are free, no API key required. CoinGecko provides USD prices for all chains in one batch request (failure is silent).
+
+## Adding a new chain
+
+1. Add an entry to `CHAINS` with `name`, `symbol`, `color`, `icon`, `decimals`, `cgId`, `explorer`.
+2. Add a regex branch in `detectChain()` — order matters; Solana's broad base58 pattern must stay last.
+3. Write an `api*()` fetcher function.
+4. Add a branch in `lookupChain()` calling the fetcher and the appropriate `render*()` function.
+   - If it fits an existing API family (EVM RPC → add `evmKey`; Blockchair → add `blockchairKey`), no new fetcher needed.
+5. Update the hint text in `index.html` and the footer attribution if using a new data source.
 
 ## Key design decisions
 
-- **`--accent` CSS variable** is set per-chain on `<html>` so all orange accents (balance, hover states, spinner) automatically match the selected chain colour.
-- **EVM address ambiguity**: a `0x` address works on all EVM networks; the app shows a network-selector tab row when one is detected.
-- **`detectChain()`** runs on every keystroke (150 ms debounce) to update the inline chip and show/hide the EVM selector before the user clicks Look up.
-- **EVM balance precision**: `eth_getBalance` returns a hex `wei` string; code converts via `BigInt` to avoid float overflow: `Number(wei / 1000n) / 1e15`.
+- **`--accent` CSS variable** is set per-chain on `<html>` so all accent colors (balance, hover states, spinner) automatically match the selected chain.
+- **EVM address ambiguity**: a `0x` address works on all EVM networks; the app shows a network-selector tab row when one is detected. Active selection is tracked in `activeEvmChain`.
+- **EVM RPC fallback chain**: `apiEvmBalance` iterates `EVM_RPCS[evmKey]` until one succeeds, so adding more fallback endpoints is the fix for flaky chains.
+- **EVM tx list**: `apiEvmFull` calls Routescan's Etherscan-compat API (`api.routescan.io/v2/network/mainnet/evm/{chainId}/etherscan/api`). Each EVM chain in `CHAINS` has a `routescanId`. `apiEvmBalance` (direct RPC) is kept as dead code for reference.
+- **EVM balance/value precision**: wei strings converted via `BigInt` to avoid float overflow: `Math.round(Number(wei / 1000n) / 1e15 * 10^decimals)`.
+- **Solana tx amounts**: `apiSol` fetches up to 10 `getTransaction` calls in parallel after `getSignaturesForAddress`; net lamport change is computed from `preBalances`/`postBalances` at the address's account index.
+- **Tron direction**: TronGrid returns hex addresses (`41…`) on `acct.address`; `renderTrxTxs` compares `owner_address`/`to_address` against this hex value to determine send/receive.
 
 ## Deployment
 
-Cloudflare Pages auto-deploys on every push to `main`.
-Custom domain `kiwipit.com` is configured inside the Cloudflare Pages dashboard (DNS is auto-managed since the domain is on Cloudflare).
+Cloudflare Pages auto-deploys on every push to `main`. Custom domain `kiwipit.com` is managed in the Cloudflare Pages dashboard.
