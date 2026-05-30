@@ -11,25 +11,37 @@ No build step. Pure HTML/CSS/JS — edit and push to deploy.
 ## Stack
 
 - `index.html` — single-page app shell
-- `style.css` — dark-theme styles, CSS variables for colours
-- `app.js` — all logic (address/xpub detection, mempool.space API calls, rendering)
+- `style.css` — dark-theme styles, `--accent` CSS variable overridden per chain via JS
+- `app.js` — multi-chain logic: detection, API fetchers, rendering
 - `_headers` — Cloudflare Pages security headers
 
-## APIs used
+## Supported chains
 
-- **mempool.space** (`https://mempool.space/api`) — balance and transactions; no key required
-  - Address: `GET /address/{addr}` and `GET /address/{addr}/txs`
-  - xpub:    `GET /v1/xpub/{xpub}` and `GET /v1/xpub/{xpub}/txs`
-- **CoinGecko** — BTC/USD spot price; fetched on each lookup, failure is silent (price display simply hides)
+| Chain | Detection pattern | API | TX list? |
+|-------|------------------|-----|---------|
+| Bitcoin (BTC) | `1…` `3…` `bc1…` `xpub/ypub/zpub` | mempool.space | ✓ full |
+| Ethereum (ETH) | `0x…` + network tab | public EVM RPC (eth.llamarpc.com) | explorer link |
+| BNB Chain | `0x…` + network tab | BSC RPC (bsc-dataseed.binance.org) | explorer link |
+| Polygon | `0x…` + network tab | polygon-rpc.com | explorer link |
+| Avalanche | `0x…` + network tab | api.avax.network | explorer link |
+| Arbitrum | `0x…` + network tab | arb1.arbitrum.io/rpc | explorer link |
+| Optimism | `0x…` + network tab | mainnet.optimism.io | explorer link |
+| Litecoin (LTC) | `L…` `M…` `ltc1…` | blockchair | explorer link |
+| Dogecoin (DOGE) | `D…` | blockchair | explorer link |
+| Bitcoin Cash (BCH) | `q…` `p…` cashaddr | blockchair | explorer link |
+| Dash (DASH) | `X…` | blockchair | explorer link |
+| Tron (TRX) | `T…` | TronGrid | ✓ simplified |
+| XRP | `r…` | XRPL cluster | ✓ simplified |
+| Solana (SOL) | base58 32-44 chars | Solana public RPC | ✓ signatures |
 
-## Supported input formats
+All APIs are free and require no API key. CoinGecko provides USD prices for all chains in one batch request (failure is silent).
 
-| Format | Example prefix | Notes |
-|--------|---------------|-------|
-| P2PKH  | `1`           | Legacy address |
-| P2SH   | `3`           | SegWit-wrapped |
-| Bech32 | `bc1`         | Native SegWit / Taproot |
-| xpub   | `xpub` / `ypub` / `zpub` | HD extended public key |
+## Key design decisions
+
+- **`--accent` CSS variable** is set per-chain on `<html>` so all orange accents (balance, hover states, spinner) automatically match the selected chain colour.
+- **EVM address ambiguity**: a `0x` address works on all EVM networks; the app shows a network-selector tab row when one is detected.
+- **`detectChain()`** runs on every keystroke (150 ms debounce) to update the inline chip and show/hide the EVM selector before the user clicks Look up.
+- **EVM balance precision**: `eth_getBalance` returns a hex `wei` string; code converts via `BigInt` to avoid float overflow: `Number(wei / 1000n) / 1e15`.
 
 ## Deployment
 

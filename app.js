@@ -1,176 +1,586 @@
-const API = 'https://mempool.space/api';
-let btcPrice = null;
+// ─── Chain Registry ───────────────────────────────────────────────────────────
 
-// ── Helpers ────────────────────────────────────────────────
+const CHAINS = {
+  btc: {
+    name: 'Bitcoin',      symbol: 'BTC',  color: '#f7931a', icon: '₿',
+    decimals: 8,  cgId: 'bitcoin',
+    explorer: { tx: 'https://mempool.space/tx/', addr: 'https://mempool.space/address/' },
+  },
+  eth: {
+    name: 'Ethereum',     symbol: 'ETH',  color: '#627eea', icon: 'Ξ',
+    decimals: 18, cgId: 'ethereum',
+    rpcUrl: 'https://eth.llamarpc.com',
+    explorer: { tx: 'https://etherscan.io/tx/', addr: 'https://etherscan.io/address/' },
+  },
+  bnb: {
+    name: 'BNB Chain',    symbol: 'BNB',  color: '#f3ba2f', icon: 'B',
+    decimals: 18, cgId: 'binancecoin',
+    rpcUrl: 'https://bsc-dataseed.binance.org',
+    explorer: { tx: 'https://bscscan.com/tx/', addr: 'https://bscscan.com/address/' },
+  },
+  matic: {
+    name: 'Polygon',      symbol: 'POL',  color: '#8247e5', icon: 'P',
+    decimals: 18, cgId: 'matic-network',
+    rpcUrl: 'https://polygon-rpc.com',
+    explorer: { tx: 'https://polygonscan.com/tx/', addr: 'https://polygonscan.com/address/' },
+  },
+  avax: {
+    name: 'Avalanche',    symbol: 'AVAX', color: '#e84142', icon: 'A',
+    decimals: 18, cgId: 'avalanche-2',
+    rpcUrl: 'https://api.avax.network/ext/bc/C/rpc',
+    explorer: { tx: 'https://snowtrace.io/tx/', addr: 'https://snowtrace.io/address/' },
+  },
+  arb: {
+    name: 'Arbitrum',     symbol: 'ETH',  color: '#28a0f0', icon: 'Ↄ',
+    decimals: 18, cgId: 'ethereum',
+    rpcUrl: 'https://arb1.arbitrum.io/rpc',
+    explorer: { tx: 'https://arbiscan.io/tx/', addr: 'https://arbiscan.io/address/' },
+  },
+  op: {
+    name: 'Optimism',     symbol: 'ETH',  color: '#ff0420', icon: 'O',
+    decimals: 18, cgId: 'ethereum',
+    rpcUrl: 'https://mainnet.optimism.io',
+    explorer: { tx: 'https://optimistic.etherscan.io/tx/', addr: 'https://optimistic.etherscan.io/address/' },
+  },
+  ltc: {
+    name: 'Litecoin',     symbol: 'LTC',  color: '#b0b0b0', icon: 'Ł',
+    decimals: 8,  cgId: 'litecoin',
+    blockchairKey: 'litecoin',
+    explorer: { tx: 'https://blockchair.com/litecoin/transaction/', addr: 'https://blockchair.com/litecoin/address/' },
+  },
+  doge: {
+    name: 'Dogecoin',     symbol: 'DOGE', color: '#c2a633', icon: 'Ð',
+    decimals: 8,  cgId: 'dogecoin',
+    blockchairKey: 'dogecoin',
+    explorer: { tx: 'https://blockchair.com/dogecoin/transaction/', addr: 'https://blockchair.com/dogecoin/address/' },
+  },
+  bch: {
+    name: 'Bitcoin Cash', symbol: 'BCH',  color: '#8dc351', icon: 'Ƀ',
+    decimals: 8,  cgId: 'bitcoin-cash',
+    blockchairKey: 'bitcoin-cash',
+    explorer: { tx: 'https://blockchair.com/bitcoin-cash/transaction/', addr: 'https://blockchair.com/bitcoin-cash/address/' },
+  },
+  dash: {
+    name: 'Dash',         symbol: 'DASH', color: '#008ce7', icon: 'D',
+    decimals: 8,  cgId: 'dash',
+    blockchairKey: 'dash',
+    explorer: { tx: 'https://blockchair.com/dash/transaction/', addr: 'https://blockchair.com/dash/address/' },
+  },
+  trx: {
+    name: 'Tron',         symbol: 'TRX',  color: '#e50915', icon: 'T',
+    decimals: 6,  cgId: 'tron',
+    explorer: { tx: 'https://tronscan.org/#/transaction/', addr: 'https://tronscan.org/#/address/' },
+  },
+  xrp: {
+    name: 'XRP',          symbol: 'XRP',  color: '#00aae4', icon: '◇',
+    decimals: 6,  cgId: 'ripple',
+    explorer: { tx: 'https://xrpscan.com/tx/', addr: 'https://xrpscan.com/account/' },
+  },
+  sol: {
+    name: 'Solana',       symbol: 'SOL',  color: '#9945ff', icon: '◎',
+    decimals: 9,  cgId: 'solana',
+    explorer: { tx: 'https://solscan.io/tx/', addr: 'https://solscan.io/account/' },
+  },
+};
 
-function satsToBtc(sats) {
-  return sats / 1e8;
+// EVM chains that share the 0x address format
+const EVM_CHAINS = ['eth', 'bnb', 'matic', 'avax', 'arb', 'op'];
+
+// ─── Prices ───────────────────────────────────────────────────────────────────
+
+let prices = {};
+
+async function fetchPrices() {
+  try {
+    const ids = [...new Set(Object.values(CHAINS).map(c => c.cgId))].join(',');
+    const r   = await fetch(
+      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`
+    );
+    if (r.ok) prices = await r.json();
+  } catch { /* prices are optional */ }
 }
 
-function fmtBtc(sats) {
-  const n = satsToBtc(Math.abs(sats));
-  // Trim trailing zeros but keep at least 2 decimals
-  const s = n.toFixed(8).replace(/0+$/, '').replace(/\.$/, '.00');
-  return s + ' BTC';
+function priceUsd(cgId) {
+  return prices[cgId]?.usd ?? null;
 }
 
-function fmtUsd(sats) {
-  if (!btcPrice || sats === 0) return '';
-  const usd = satsToBtc(Math.abs(sats)) * btcPrice;
-  return '≈ $' + usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// ─── Formatting ───────────────────────────────────────────────────────────────
+
+function fmtAmount(raw, decimals, symbol) {
+  if (raw === null || raw === undefined) return '—';
+  const n = raw / Math.pow(10, decimals);
+  const s = n.toFixed(decimals).replace(/\.?0+$/, '');
+  return (s || '0') + ' ' + symbol;
+}
+
+function fmtUsd(raw, decimals, cgId) {
+  const p = priceUsd(cgId);
+  if (!p || !raw) return '';
+  const usd = (raw / Math.pow(10, decimals)) * p;
+  return '≈ $' + usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtDate(ts) {
   if (!ts) return 'pending';
   return new Date(ts * 1000).toLocaleString(undefined, {
     year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit'
+    hour: '2-digit', minute: '2-digit',
   });
 }
 
-function shortId(id) {
-  return id.slice(0, 8) + '…' + id.slice(-8);
+function shortId(id, n = 8) {
+  if (!id) return '—';
+  return id.slice(0, n) + '…' + id.slice(-n);
 }
 
-// ── Input detection ────────────────────────────────────────
+// ─── Chain Detection ──────────────────────────────────────────────────────────
 
-function classify(input) {
-  if (/^[xyz]pub[A-Za-z0-9]{100,}/.test(input)) return 'xpub';
-  if (/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(input)) return 'address';
-  if (/^bc1[a-zA-Z0-9]{6,87}$/.test(input))             return 'address';
+function detectChain(s) {
+  s = s.trim();
+  if (!s) return null;
+
+  // Bitcoin xpub/ypub/zpub
+  if (/^[xyz]pub[A-Za-z0-9]{100,}/.test(s))         return 'btc-xpub';
+
+  // Bitcoin addresses
+  if (/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(s))  return 'btc';
+  if (/^bc1[a-zA-Z0-9]{6,87}$/i.test(s))             return 'btc';
+
+  // EVM (Ethereum, BNB Chain, Polygon, Avax, Arb, Op…)
+  if (/^0x[0-9a-fA-F]{40}$/.test(s))                 return 'evm';
+
+  // Tron  (T + 33 base58 chars)
+  if (/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(s))         return 'trx';
+
+  // XRP   (r + 24-34 alphanumeric)
+  if (/^r[0-9a-zA-Z]{24,34}$/.test(s))               return 'xrp';
+
+  // Litecoin
+  if (/^[LM][a-km-zA-HJ-NP-Z1-9]{26,33}$/.test(s))  return 'ltc';
+  if (/^ltc1[a-z0-9]{6,87}$/i.test(s))               return 'ltc';
+
+  // Dogecoin  (D + 33 base58)
+  if (/^D[a-km-zA-HJ-NP-Z1-9]{33}$/.test(s))         return 'doge';
+
+  // Dash  (X + 33 base58)
+  if (/^X[1-9A-HJ-NP-Za-km-z]{33}$/.test(s))         return 'dash';
+
+  // Bitcoin Cash  (cashaddr or old format)
+  if (/^(bitcoincash:)?[qp][0-9a-z]{41}$/.test(s))   return 'bch';
+
+  // Solana  (base58, 32-44 chars — tested last to avoid false matches)
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(s))       return 'sol';
+
   return null;
 }
 
-// ── Net amount for a given address in a transaction ────────
+// ─── API: Bitcoin (mempool.space) ─────────────────────────────────────────────
 
-function netAmount(tx, addr) {
-  let received = 0;
-  let sent = 0;
-  for (const vout of tx.vout) {
-    if (vout.scriptpubkey_address === addr) received += vout.value;
-  }
-  for (const vin of tx.vin) {
-    if (vin.prevout && vin.prevout.scriptpubkey_address === addr) sent += vin.prevout.value;
-  }
-  return received - sent;
+async function apiBtcAddress(addr) {
+  const BASE = 'https://mempool.space/api';
+  const [info, txs] = await Promise.all([
+    fetch(`${BASE}/address/${addr}`).then(r => {
+      if (!r.ok) throw new Error('Bitcoin address not found.');
+      return r.json();
+    }),
+    fetch(`${BASE}/address/${addr}/txs`).then(r => {
+      if (!r.ok) throw new Error('Could not fetch Bitcoin transactions.');
+      return r.json();
+    }),
+  ]);
+
+  const received = info.chain_stats.funded_txo_sum   + info.mempool_stats.funded_txo_sum;
+  const spent    = info.chain_stats.spent_txo_sum    + info.mempool_stats.spent_txo_sum;
+  const txCount  = info.chain_stats.tx_count         + info.mempool_stats.tx_count;
+
+  return {
+    balance:  received - spent,
+    received,
+    spent,
+    txCount,
+    txs,
+    txAddr:   addr,
+  };
 }
 
-// ── Render ─────────────────────────────────────────────────
+async function apiBtcXpub(xpub) {
+  const BASE = 'https://mempool.space/api';
+  const [info, txs] = await Promise.all([
+    fetch(`${BASE}/v1/xpub/${xpub}`).then(r => {
+      if (!r.ok) throw new Error('xpub not found or not yet indexed by mempool.space.');
+      return r.json();
+    }),
+    fetch(`${BASE}/v1/xpub/${xpub}/txs`).then(r => {
+      if (!r.ok) throw new Error('Could not fetch xpub transactions.');
+      return r.json();
+    }),
+  ]);
 
-function renderStats(balance, received, spent, txCount) {
-  document.getElementById('balanceBtc').textContent  = fmtBtc(balance);
-  document.getElementById('balanceUsd').textContent  = fmtUsd(balance);
-  document.getElementById('statReceived').textContent = fmtBtc(received);
-  document.getElementById('statSent').textContent     = fmtBtc(spent);
-  document.getElementById('statTxCount').textContent  = txCount.toLocaleString();
+  return {
+    balance:  info.balance ?? (info.funded_txo_sum - info.spent_txo_sum),
+    received: info.funded_txo_sum,
+    spent:    info.spent_txo_sum,
+    txCount:  info.tx_count,
+    txs,
+    txAddr:   null,
+  };
 }
 
-function renderTxList(txs, addr) {
-  const list = document.getElementById('txList');
+// ─── API: EVM chains (public JSON-RPC eth_getBalance) ────────────────────────
 
-  if (!txs || txs.length === 0) {
-    list.innerHTML = '<p class="tx-empty">No transactions found.</p>';
+async function apiEvmBalance(rpcUrl, addr) {
+  const r = await fetch(rpcUrl, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ jsonrpc: '2.0', method: 'eth_getBalance', params: [addr, 'latest'], id: 1 }),
+  });
+  if (!r.ok) throw new Error('RPC request failed.');
+  const d = await r.json();
+  if (d.error) throw new Error(d.error.message || 'RPC error.');
+  // hex → BigInt → divide avoiding float overflow
+  const wei = BigInt(d.result);
+  return Number(wei / 1000n) / 1e15;   // wei/1000 keeps us in safe int range, then /1e15 = /1e18
+}
+
+// ─── API: Blockchair multi-chain ──────────────────────────────────────────────
+
+async function apiBlockchair(blockchairKey, addr) {
+  const r = await fetch(`https://api.blockchair.com/${blockchairKey}/dashboards/address/${addr}`);
+  if (!r.ok) throw new Error(`Address not found on ${blockchairKey}.`);
+  const d = await r.json();
+  if (d.context?.code !== 200) throw new Error(d.context?.error || 'Blockchair error.');
+  const info = d.data[addr]?.address ?? d.data[addr.toLowerCase()]?.address;
+  if (!info) throw new Error('Address not found.');
+  return {
+    balance:  info.balance  ?? 0,
+    received: info.received ?? 0,
+    spent:    info.spent    ?? 0,
+    txCount:  info.transaction_count ?? 0,
+  };
+}
+
+// ─── API: Tron (TronGrid) ────────────────────────────────────────────────────
+
+async function apiTrx(addr) {
+  const [accRes, txRes] = await Promise.all([
+    fetch(`https://api.trongrid.io/v1/accounts/${addr}`),
+    fetch(`https://api.trongrid.io/v1/accounts/${addr}/transactions?limit=20&order_by=block_timestamp,desc`),
+  ]);
+  if (!accRes.ok) throw new Error('Tron address not found.');
+  const accData = await accRes.json();
+  const acct    = accData.data?.[0];
+  if (!acct) throw new Error('Tron address not found or has no activity.');
+
+  const txData = txRes.ok ? await txRes.json() : { data: [] };
+  return {
+    balance: acct.balance ?? 0,   // SUN (10^6 = 1 TRX)
+    txCount: acct.trc20?.length ?? 0,
+    txs:     txData.data ?? [],
+  };
+}
+
+// ─── API: XRP (XRPL public cluster) ──────────────────────────────────────────
+
+async function apiXrp(addr) {
+  const post = body => fetch('https://xrplcluster.com', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
+  }).then(r => r.json());
+
+  const [accInfo, txInfo] = await Promise.all([
+    post({ method: 'account_info', params: [{ account: addr, ledger_index: 'validated' }] }),
+    post({ method: 'account_tx',   params: [{ account: addr, limit: 20, ledger_index_min: -1, ledger_index_max: -1 }] }),
+  ]);
+
+  if (accInfo.result?.error) {
+    throw new Error(accInfo.result.error === 'actNotFound'
+      ? 'XRP address not found or unfunded.'
+      : accInfo.result.error_message || 'XRPL error.');
+  }
+
+  const drops = Number(accInfo.result.account_data.Balance);
+  return {
+    balance: drops,   // 10^6 drops = 1 XRP
+    txs:     txInfo.result?.transactions ?? [],
+  };
+}
+
+// ─── API: Solana (public RPC) ─────────────────────────────────────────────────
+
+async function apiSol(addr) {
+  const post = (method, params) => fetch('https://api.mainnet-beta.solana.com', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  }).then(r => r.json());
+
+  const [balRes, sigRes] = await Promise.all([
+    post('getBalance',               [addr]),
+    post('getSignaturesForAddress',  [addr, { limit: 20 }]),
+  ]);
+
+  if (balRes.error) throw new Error(balRes.error.message || 'Solana RPC error.');
+  return {
+    balance: balRes.result?.value ?? 0,   // lamports (10^9 = 1 SOL)
+    sigs:    sigRes.result ?? [],
+  };
+}
+
+// ─── Rendering ────────────────────────────────────────────────────────────────
+
+function setChainTheme(chainKey) {
+  const c = CHAINS[chainKey];
+  if (!c) return;
+  document.documentElement.style.setProperty('--accent', c.color);
+}
+
+function renderChainHeader(chainKey, addr) {
+  const c = CHAINS[chainKey];
+  const badge = document.getElementById('chainBadge');
+  badge.textContent  = `${c.icon} ${c.name}`;
+  badge.style.color  = c.color;
+  badge.style.borderColor = c.color;
+
+  const link = document.getElementById('explorerAddrLink');
+  link.href = c.explorer.addr + encodeURIComponent(addr);
+}
+
+function renderBalance(raw, chain) {
+  const c = CHAINS[chain];
+  document.getElementById('balanceAmount').textContent = fmtAmount(raw, c.decimals, c.symbol);
+  document.getElementById('balanceUsd').textContent    = fmtUsd(raw, c.decimals, c.cgId);
+}
+
+function renderStats(received, sent, txCount, chain) {
+  const c = CHAINS[chain];
+  const row = document.getElementById('statsRow');
+
+  if (received === null && sent === null && txCount === null) {
+    row.classList.add('hidden');
     return;
   }
+  row.classList.remove('hidden');
+  document.getElementById('statReceived').textContent = received !== null ? fmtAmount(received, c.decimals, c.symbol) : '—';
+  document.getElementById('statSent').textContent     = sent     !== null ? fmtAmount(sent,     c.decimals, c.symbol) : '—';
+  document.getElementById('statTxCount').textContent  = txCount  !== null ? txCount.toLocaleString() : '—';
+}
+
+// Bitcoin: full net-per-address tx list
+function renderBtcTxs(txs, addr, chain) {
+  const c    = CHAINS[chain];
+  const list = document.getElementById('txList');
+
+  if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
   list.innerHTML = txs.map(tx => {
-    const net        = addr ? netAmount(tx, addr) : null;
-    const confirmed  = tx.status.confirmed;
-    const date       = fmtDate(tx.status.block_time);
+    let received = 0, sent = 0;
+    for (const o of tx.vout) if (o.scriptpubkey_address === addr) received += o.value;
+    for (const i of tx.vin)  if (i.prevout?.scriptpubkey_address === addr) sent += i.value;
+    const net     = addr ? received - sent : null;
+    const cls     = net === null ? 'neutral' : net > 0 ? 'positive' : net < 0 ? 'negative' : 'neutral';
+    const prefix  = net > 0 ? '+' : net < 0 ? '−' : '';
+    const absNet  = net !== null ? Math.abs(net) : null;
+    const confirmed = tx.status.confirmed;
 
-    let amtClass = 'neutral';
-    let amtText  = '—';
-    let usdText  = '';
-
-    if (net !== null) {
-      amtClass = net > 0 ? 'positive' : net < 0 ? 'negative' : 'neutral';
-      const prefix = net > 0 ? '+' : net < 0 ? '−' : '';
-      amtText  = prefix + fmtBtc(net);
-      usdText  = fmtUsd(net);
-    }
-
-    return `
-<div class="tx-item">
+    return `<div class="tx-item">
   <div>
-    <a class="tx-id"
-       href="https://mempool.space/tx/${tx.txid}"
-       target="_blank" rel="noopener noreferrer"
-    >${shortId(tx.txid)}</a>
-    <span class="tx-badge ${confirmed ? 'confirmed' : 'unconfirmed'}">
-      ${confirmed ? 'confirmed' : 'unconfirmed'}
-    </span>
-    <div class="tx-meta">${date}</div>
+    <a class="tx-id" href="${c.explorer.tx}${tx.txid}" target="_blank" rel="noopener">${shortId(tx.txid)}</a>
+    <span class="tx-badge ${confirmed ? 'confirmed' : 'unconfirmed'}">${confirmed ? 'confirmed' : 'pending'}</span>
+    <div class="tx-meta">${fmtDate(tx.status.block_time)}</div>
   </div>
   <div class="tx-right">
-    <div class="tx-amount ${amtClass}">${amtText}</div>
-    <div class="tx-usd">${usdText}</div>
+    <div class="tx-amount ${cls}">${absNet !== null ? prefix + fmtAmount(absNet, c.decimals, c.symbol) : '—'}</div>
+    <div class="tx-usd">${absNet !== null ? fmtUsd(absNet, c.decimals, c.cgId) : ''}</div>
   </div>
 </div>`;
   }).join('');
 }
 
-// ── Lookup ─────────────────────────────────────────────────
+// TRX: transaction list from TronGrid
+function renderTrxTxs(txs, addr, chain) {
+  const c    = CHAINS[chain];
+  const list = document.getElementById('txList');
+  if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
-async function fetchBtcPrice() {
-  try {
-    const r = await fetch(
-      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd'
-    );
-    if (r.ok) {
-      const d = await r.json();
-      btcPrice = d.bitcoin.usd;
-    }
-  } catch { /* price is optional */ }
+  list.innerHTML = txs.map(tx => {
+    const contract = tx.raw_data?.contract?.[0];
+    const val      = contract?.parameter?.value ?? {};
+    const amount   = val.amount ?? 0;                // in SUN
+    const toHex    = val.to_address ?? '';
+    const fromHex  = val.owner_address ?? '';
+    // TronGrid returns hex addresses prefixed with "41"
+    const addrHex  = addr;  // user input is Base58, comparison unreliable; show direction from contract type
+    const type     = contract?.type ?? '';
+    const status   = tx.ret?.[0]?.contractRet ?? 'UNKNOWN';
+    const ts       = tx.block_timestamp ? tx.block_timestamp / 1000 : 0;
+
+    return `<div class="tx-item">
+  <div>
+    <a class="tx-id" href="${c.explorer.tx}${tx.txID}" target="_blank" rel="noopener">${shortId(tx.txID)}</a>
+    <span class="tx-badge ${status === 'SUCCESS' ? 'success' : 'failed'}">${status}</span>
+    <div class="tx-meta">${fmtDate(ts)} · ${type}</div>
+  </div>
+  <div class="tx-right">
+    <div class="tx-amount neutral">${fmtAmount(amount, c.decimals, c.symbol)}</div>
+    <div class="tx-usd">${fmtUsd(amount, c.decimals, c.cgId)}</div>
+  </div>
+</div>`;
+  }).join('');
 }
 
-async function lookupAddress(addr) {
-  document.getElementById('addressLabel').textContent = addr;
+// XRP: transaction list from XRPL
+function renderXrpTxs(txs, addr, chain) {
+  const c    = CHAINS[chain];
+  const list = document.getElementById('txList');
+  if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
-  const [info, txs] = await Promise.all([
-    fetch(`${API}/address/${addr}`).then(r => {
-      if (!r.ok) throw new Error('Address not found. Double-check the address and try again.');
-      return r.json();
-    }),
-    fetch(`${API}/address/${addr}/txs`).then(r => {
-      if (!r.ok) throw new Error('Could not fetch transactions.');
-      return r.json();
-    }),
-  ]);
+  // XRPL epoch offset: Jan 1 2000 = 946684800 Unix
+  const XRPL_EPOCH = 946684800;
 
-  const received = info.chain_stats.funded_txo_sum  + info.mempool_stats.funded_txo_sum;
-  const spent    = info.chain_stats.spent_txo_sum   + info.mempool_stats.spent_txo_sum;
-  const balance  = received - spent;
-  const txCount  = info.chain_stats.tx_count        + info.mempool_stats.tx_count;
+  list.innerHTML = txs.map(entry => {
+    const tx     = entry.tx ?? entry;
+    const meta   = entry.meta;
+    const hash   = tx.hash ?? '—';
+    const ts     = tx.date ? tx.date + XRPL_EPOCH : 0;
+    const isSend = tx.Account === addr;
+    const amount = typeof tx.Amount === 'string' ? Number(tx.Amount) : 0;  // drops
+    const cls    = isSend ? 'negative' : 'positive';
+    const prefix = isSend ? '−' : '+';
+    const ok     = meta?.TransactionResult === 'tesSUCCESS';
 
-  renderStats(balance, received, spent, txCount);
-  renderTxList(txs, addr);
+    return `<div class="tx-item">
+  <div>
+    <a class="tx-id" href="${c.explorer.tx}${hash}" target="_blank" rel="noopener">${shortId(hash)}</a>
+    <span class="tx-badge ${ok ? 'success' : 'failed'}">${ok ? 'success' : 'failed'}</span>
+    <div class="tx-meta">${fmtDate(ts)}</div>
+  </div>
+  <div class="tx-right">
+    <div class="tx-amount ${cls}">${prefix}${fmtAmount(amount, c.decimals, c.symbol)}</div>
+    <div class="tx-usd">${fmtUsd(amount, c.decimals, c.cgId)}</div>
+  </div>
+</div>`;
+  }).join('');
 }
 
-async function lookupXpub(xpub) {
+// Solana: recent signature list (no amount — needs separate tx fetch per sig)
+function renderSolSigs(sigs, chain) {
+  const c    = CHAINS[chain];
+  const list = document.getElementById('txList');
+  if (!sigs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
+
+  list.innerHTML = sigs.map(s => {
+    const ok = !s.err;
+    return `<div class="tx-item">
+  <div>
+    <a class="tx-id" href="${c.explorer.tx}${s.signature}" target="_blank" rel="noopener">${shortId(s.signature)}</a>
+    <span class="tx-badge ${ok ? 'confirmed' : 'failed'}">${ok ? 'confirmed' : 'failed'}</span>
+    <div class="tx-meta">${fmtDate(s.blockTime)}</div>
+  </div>
+  <div class="tx-right">
+    <div class="tx-amount neutral">—</div>
+  </div>
+</div>`;
+  }).join('');
+}
+
+// Explorer-link fallback for chains without a full tx list
+function renderExplorerFallback(addr, chain) {
+  const c    = CHAINS[chain];
+  const list = document.getElementById('txList');
+  list.innerHTML = `<a class="explorer-btn" href="${c.explorer.addr}${encodeURIComponent(addr)}" target="_blank" rel="noopener noreferrer">
+  View full transaction history on ${new URL(c.explorer.addr).hostname} ↗
+</a>`;
+}
+
+// ─── Unified Lookup ───────────────────────────────────────────────────────────
+
+async function lookupChain(rawInput, chainKey) {
+  const input = rawInput.trim();
+  const c     = CHAINS[chainKey];
+
   document.getElementById('addressLabel').textContent =
-    xpub.slice(0, 16) + '…' + xpub.slice(-8);
+    input.length > 60 ? input.slice(0, 24) + '…' + input.slice(-12) : input;
 
-  const [info, txs] = await Promise.all([
-    fetch(`${API}/v1/xpub/${xpub}`).then(r => {
-      if (!r.ok) throw new Error('Extended public key not found or not yet indexed. Try a specific address instead.');
-      return r.json();
-    }),
-    fetch(`${API}/v1/xpub/${xpub}/txs`).then(r => {
-      if (!r.ok) throw new Error('Could not fetch transactions for this xpub.');
-      return r.json();
-    }),
-  ]);
+  setChainTheme(chainKey);
+  renderChainHeader(chainKey, input);
 
-  const received = info.funded_txo_sum;
-  const spent    = info.spent_txo_sum;
-  const balance  = info.balance ?? (received - spent);
+  const statsRow = document.getElementById('statsRow');
+  const txSection = document.getElementById('txSection');
+  statsRow.classList.remove('hidden');
+  txSection.classList.remove('hidden');
 
-  renderStats(balance, received, spent, info.tx_count);
-  // For xpub we don't have a single address, show totals only
-  renderTxList(txs, null);
+  // ── Bitcoin ──
+  if (chainKey === 'btc') {
+    const d = await apiBtcAddress(input);
+    renderBalance(d.balance, 'btc');
+    renderStats(d.received, d.spent, d.txCount, 'btc');
+    renderBtcTxs(d.txs, d.txAddr, 'btc');
+    return;
+  }
+
+  if (chainKey === 'btc-xpub') {
+    const d = await apiBtcXpub(input);
+    renderBalance(d.balance, 'btc');
+    renderStats(d.received, d.spent, d.txCount, 'btc');
+    renderBtcTxs(d.txs, null, 'btc');
+    return;
+  }
+
+  // ── EVM RPC chains (ETH, BNB, MATIC, AVAX, ARB, OP) ──
+  if (c.rpcUrl) {
+    const balEth = await apiEvmBalance(c.rpcUrl, input);
+    // Convert float ETH to raw units for unified fmtAmount
+    const balRaw = Math.round(balEth * Math.pow(10, c.decimals));
+    renderBalance(balRaw, chainKey);
+    renderStats(null, null, null, chainKey);
+    statsRow.classList.add('hidden');
+    renderExplorerFallback(input, chainKey);
+    return;
+  }
+
+  // ── Blockchair chains (LTC, DOGE, BCH, DASH) ──
+  if (c.blockchairKey) {
+    const d = await apiBlockchair(c.blockchairKey, input);
+    renderBalance(d.balance, chainKey);
+    renderStats(d.received, d.spent, d.txCount, chainKey);
+    renderExplorerFallback(input, chainKey);
+    return;
+  }
+
+  // ── Tron ──
+  if (chainKey === 'trx') {
+    const d = await apiTrx(input);
+    renderBalance(d.balance, 'trx');
+    renderStats(null, null, d.txCount || null, 'trx');
+    renderTrxTxs(d.txs, input, 'trx');
+    return;
+  }
+
+  // ── XRP ──
+  if (chainKey === 'xrp') {
+    const d = await apiXrp(input);
+    renderBalance(d.balance, 'xrp');
+    renderStats(null, null, null, 'xrp');
+    statsRow.classList.add('hidden');
+    renderXrpTxs(d.txs, input, 'xrp');
+    return;
+  }
+
+  // ── Solana ──
+  if (chainKey === 'sol') {
+    const d = await apiSol(input);
+    renderBalance(d.balance, 'sol');
+    renderStats(null, null, null, 'sol');
+    statsRow.classList.add('hidden');
+    renderSolSigs(d.sigs, 'sol');
+    return;
+  }
+
+  throw new Error(`Chain ${chainKey} not implemented.`);
 }
 
-// ── UI state ───────────────────────────────────────────────
+// ─── UI State ─────────────────────────────────────────────────────────────────
 
 function setLoading(on) {
   document.getElementById('loading').classList.toggle('hidden', !on);
@@ -186,32 +596,69 @@ function setResults(show) {
   document.getElementById('results').classList.toggle('hidden', !show);
 }
 
-// ── Main handler ───────────────────────────────────────────
+// ─── EVM network selector ─────────────────────────────────────────────────────
+
+let activeEvmChain = 'eth';
+
+function buildEvmTabs() {
+  const container = document.getElementById('evmTabs');
+  container.innerHTML = EVM_CHAINS.map(key => {
+    const c = CHAINS[key];
+    return `<button class="evm-tab${key === 'eth' ? ' active' : ''}"
+      data-chain="${key}"
+      style="--tab-color:${c.color}"
+    >${c.symbol === 'ETH' ? c.name : c.symbol}</button>`;
+  }).join('');
+
+  container.addEventListener('click', e => {
+    const btn = e.target.closest('.evm-tab');
+    if (!btn) return;
+    container.querySelectorAll('.evm-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeEvmChain = btn.dataset.chain;
+  });
+}
+
+function showEvmSelector(show) {
+  document.getElementById('evmSelector').classList.toggle('hidden', !show);
+}
+
+function updateDetectedChip(detected) {
+  const chip = document.getElementById('detectedChip');
+  if (!detected || detected === 'evm') {
+    chip.classList.add('hidden');
+    return;
+  }
+  const key = detected === 'btc-xpub' ? 'btc' : detected;
+  const c   = CHAINS[key];
+  if (!c) { chip.classList.add('hidden'); return; }
+  chip.textContent        = `${c.icon} ${c.symbol}`;
+  chip.style.color        = c.color;
+  chip.style.background   = c.color + '22';
+  chip.classList.remove('hidden');
+}
+
+// ─── Main handler ─────────────────────────────────────────────────────────────
 
 async function handleLookup() {
-  const input = document.getElementById('addressInput').value.trim();
+  const input    = document.getElementById('addressInput').value.trim();
   if (!input) return;
+
+  const detected = detectChain(input);
 
   setLoading(true);
   setError('');
   setResults(false);
 
   try {
-    await fetchBtcPrice();
+    await fetchPrices();
 
-    const kind = classify(input);
-    if (!kind) {
-      throw new Error(
-        'Unrecognised format. Enter a Bitcoin address (1…, 3…, or bc1…) or an extended public key (xpub / ypub / zpub).'
-      );
+    if (!detected) {
+      throw new Error('Address format not recognised. Supported: Bitcoin, Ethereum (0x…), Solana, Tron (T…), XRP (r…), Litecoin (L…/M…), Dogecoin (D…), Dash (X…), Bitcoin Cash, and xpub/ypub/zpub keys.');
     }
 
-    if (kind === 'xpub') {
-      await lookupXpub(input);
-    } else {
-      await lookupAddress(input);
-    }
-
+    const chainKey = detected === 'evm' ? activeEvmChain : detected;
+    await lookupChain(input, chainKey);
     setResults(true);
   } catch (err) {
     setError(err.message || 'Something went wrong. Please try again.');
@@ -220,9 +667,27 @@ async function handleLookup() {
   }
 }
 
-// ── Events ─────────────────────────────────────────────────
+// ─── Input auto-detect ────────────────────────────────────────────────────────
+
+let detectTimer = null;
+
+document.getElementById('addressInput').addEventListener('input', () => {
+  clearTimeout(detectTimer);
+  detectTimer = setTimeout(() => {
+    const val      = document.getElementById('addressInput').value.trim();
+    const detected = detectChain(val);
+    updateDetectedChip(detected);
+    showEvmSelector(detected === 'evm');
+  }, 150);
+});
+
+// ─── Events ───────────────────────────────────────────────────────────────────
 
 document.getElementById('lookupBtn').addEventListener('click', handleLookup);
 document.getElementById('addressInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') handleLookup();
 });
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
+buildEvmTabs();

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KiwiPit — Bitcoin Wallet Viewer</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>₿</text></svg>">
+  <title>KiwiPit — Crypto Wallet Viewer</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥝</text></svg>">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,28 +12,37 @@
 
     <header class="header">
       <div class="brand">
-        <span class="brand-icon">₿</span>
+        <span class="brand-kiwi">🥝</span>
         <span class="brand-name">KiwiPit</span>
       </div>
-      <p class="brand-tagline">Bitcoin Wallet Viewer</p>
+      <p class="brand-tagline">Multi-Chain Crypto Wallet Viewer</p>
     </header>
 
     <main class="main">
 
       <div class="search-box">
         <div class="search-row">
-          <input
-            type="text"
-            id="addressInput"
-            class="search-input"
-            placeholder="Bitcoin address (1… / 3… / bc1…) or xpub / ypub / zpub"
-            autocomplete="off"
-            spellcheck="false"
-          />
+          <div class="input-wrap">
+            <input
+              type="text"
+              id="addressInput"
+              class="search-input"
+              placeholder="Paste any wallet address or public key…"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <span id="detectedChip" class="detected-chip hidden"></span>
+          </div>
           <button id="lookupBtn" class="search-btn">Look up</button>
         </div>
+
+        <div id="evmSelector" class="evm-selector hidden">
+          <span class="evm-label">Select network:</span>
+          <div class="evm-tabs" id="evmTabs"></div>
+        </div>
+
         <p class="search-hint">
-          On SafePal S1: open the Bitcoin wallet → tap <strong>Receive</strong> → copy the address shown.
+          Supports <strong>Bitcoin, Ethereum, Solana, Tron, XRP, Litecoin, Dogecoin, BNB Chain, Polygon, Avalanche, Arbitrum, Optimism, Bitcoin Cash, Dash</strong> — chain is auto-detected from the address format.
         </p>
       </div>
 
@@ -46,15 +55,22 @@
 
       <div id="results" class="results hidden">
 
+        <div class="chain-header">
+          <div id="chainBadge" class="chain-badge"></div>
+          <a id="explorerAddrLink" class="explorer-addr-link" href="#" target="_blank" rel="noopener noreferrer">
+            View on explorer ↗
+          </a>
+        </div>
+
         <p class="address-label" id="addressLabel"></p>
 
-        <div class="balance-card">
+        <div class="balance-card" id="balanceCard">
           <span class="balance-label">Balance</span>
-          <span id="balanceBtc" class="balance-btc">0 BTC</span>
+          <span id="balanceAmount" class="balance-amount">—</span>
           <span id="balanceUsd" class="balance-usd"></span>
         </div>
 
-        <div class="stats-row">
+        <div class="stats-row" id="statsRow">
           <div class="stat-card">
             <span class="stat-label">Total Received</span>
             <span id="statReceived" class="stat-value green">—</span>
@@ -69,7 +85,7 @@
           </div>
         </div>
 
-        <div class="tx-section">
+        <div id="txSection" class="tx-section">
           <h2 class="tx-header">Recent Transactions</h2>
           <div id="txList"></div>
         </div>
@@ -78,8 +94,13 @@
     </main>
 
     <footer class="footer">
-      Data provided by <a href="https://mempool.space" target="_blank" rel="noopener">mempool.space</a>
-      &amp; <a href="https://coingecko.com" target="_blank" rel="noopener">CoinGecko</a>
+      Data from
+      <a href="https://mempool.space"    target="_blank" rel="noopener">mempool.space</a> ·
+      <a href="https://blockchair.com"   target="_blank" rel="noopener">blockchair</a> ·
+      <a href="https://trongrid.io"      target="_blank" rel="noopener">TronGrid</a> ·
+      <a href="https://xrplcluster.com"  target="_blank" rel="noopener">XRPL</a> ·
+      <a href="https://solana.com"       target="_blank" rel="noopener">Solana</a> ·
+      <a href="https://coingecko.com"    target="_blank" rel="noopener">CoinGecko</a>
     </footer>
 
   </div>
