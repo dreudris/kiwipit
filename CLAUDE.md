@@ -110,13 +110,12 @@ Expect EVM: `{"status":"1","message":"OK","result":"<wei>"}` — not `{"status":
 
 The `origin` remote uses HTTPS and the user's PAT is stored via `git config --global credential.helper store` at `~/.git-credentials`. **Push directly with `git push origin main` — do not prompt the user for credentials.** If a push ever fails with an auth error, tell the user the stored token may have expired or been revoked; don't try to work around it.
 
-## Portfolio expansion roadmap
+## Portfolio expansion
 
-Multi-wallet portfolio support is being shipped in phases, one commit per phase pushed to `main` for the user to verify on `kiwipit.com` before the next one starts. Workflow: implement → commit → push → wait for user approval ("go" / "approved") before continuing.
+All five planned phases shipped (currency switcher, multi-wallet inputs, portfolio summary + pie chart, CSV export, PDF export) — see `git log` for the original phased commits. Key pieces in `app.js`:
 
-Phases 1 (currency switcher), 2 (multi-wallet inputs), and 3 (portfolio summary + pie chart, aggregated by `cgId`) are merged — see `git log` and `renderPortfolio` in `app.js` for the actual implementation. `lookupChain` branches now return `{ chainKey, balanceRaw }` so `handleLookupAll` can hand results to `renderPortfolio`. Pending:
+- **`renderPortfolio(walletResults, exportRows)`** — aggregates balances by `c.cgId` (so ETH on mainnet/Arbitrum/Optimism collapse into one slice), renders the inline SVG pie, and injects the CSV/PDF export buttons into its header row.
+- **`normalizeTxs(chainKey, rawTxs, addr, opts)`** — flattens each chain's raw tx shape into uniform rows for CSV. Note: direction/amount logic is also computed inline in each `render*Txs` function (intentional duplication — refactoring six render paths to share the normalized output was deemed riskier than the ~15 lines per chain of duplication).
+- **`downloadPdf(btn)`** — captures `#portfolio` and each `.wallet-card` separately with html2canvas, stacks the canvases into an A4 PDF via jsPDF with auto-pagination. Per-element capture (vs. one parent capture) gives clean page breaks.
 
-- **Phase 4 — CSV export.** Per-transaction rows across all wallets. Will likely need a `normalizeTxs(rawTxs, chainKey, addr)` helper since each chain currently computes direction/amount inline in its `render*` function.
-- **Phase 5 — PDF export.** `html2canvas` + `jsPDF` via CDN `<script defer>` tags (keeps the no-build-step constraint). `_headers` has no CSP today, so CDN scripts load without changes.
-
-Worker proxy stays as-is for both phases; no new dynamic routes.
+The PDF libs (`html2canvas` 1.4.1 + `jsPDF` 2.5.1) load from cdnjs with SRI hashes pinned in `index.html`. If you bump versions, regenerate the SRI hashes — the browser will refuse to execute the script otherwise (silent failure: `window.html2canvas` / `window.jspdf` undefined, `downloadPdf` shows an alert).

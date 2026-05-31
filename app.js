@@ -625,6 +625,72 @@ function downloadCsv(rows) {
   URL.revokeObjectURL(url);
 }
 
+// ─── PDF export (html2canvas + jsPDF, both via CDN) ──────────────────────────
+//
+// Captures the portfolio panel and each wallet card as separate canvases, then
+// stacks them into an A4 PDF with auto-pagination. Per-element capture (vs.
+// capturing one parent) gives clean page breaks between cards. Tall cards that
+// exceed a single page get scaled to fit.
+
+async function downloadPdf(btn) {
+  if (!window.html2canvas || !window.jspdf) {
+    alert('PDF libraries failed to load. Check your network and try again.');
+    return;
+  }
+  const portfolio = document.getElementById('portfolio');
+  const cards     = [...document.querySelectorAll('#results .wallet-card')];
+  if (portfolio.classList.contains('hidden') && cards.length === 0) return;
+
+  const targets = [];
+  if (!portfolio.classList.contains('hidden')) targets.push(portfolio);
+  targets.push(...cards);
+
+  const bg = getComputedStyle(document.body).backgroundColor || '#0c0e12';
+  const originalLabel = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Rendering…'; }
+
+  try {
+    const canvases = await Promise.all(targets.map(el =>
+      window.html2canvas(el, { backgroundColor: bg, scale: 2, useCORS: true })
+    ));
+
+    const { jsPDF } = window.jspdf;
+    const pdf       = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const pageW     = pdf.internal.pageSize.getWidth();
+    const pageH     = pdf.internal.pageSize.getHeight();
+    const margin    = 10;
+    const contentW  = pageW - 2 * margin;
+    const maxBlockH = pageH - 2 * margin;
+    let cursorY     = margin;
+    let firstOnPage = true;
+
+    for (const canvas of canvases) {
+      let drawW = contentW;
+      let drawH = (canvas.height / canvas.width) * contentW;
+      // Single block taller than a page → scale down to fit (degrades cleanly for huge tx lists).
+      if (drawH > maxBlockH) {
+        drawH = maxBlockH;
+        drawW = (canvas.width / canvas.height) * drawH;
+      }
+      if (!firstOnPage && cursorY + drawH > pageH - margin) {
+        pdf.addPage();
+        cursorY = margin;
+        firstOnPage = true;
+      }
+      const offsetX = margin + (contentW - drawW) / 2;
+      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', offsetX, cursorY, drawW, drawH);
+      cursorY += drawH + 5;
+      firstOnPage = false;
+    }
+
+    pdf.save(`kiwipit-portfolio-${new Date().toISOString().slice(0, 10)}.pdf`);
+  } catch (err) {
+    alert('PDF export failed: ' + (err.message || err));
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+  }
+}
+
 // ─── Rendering ────────────────────────────────────────────────────────────────
 //
 // All render* functions take a `card` element (the .wallet-card root for one
@@ -1159,14 +1225,15 @@ function renderPortfolio(walletResults, exportRows = []) {
     </div>`;
   }).join('');
 
-  const exportBtnHtml = exportRows.length
-    ? `<button type="button" class="export-csv-btn" id="exportCsvBtn">Export CSV ↓</button>`
+  const csvBtnHtml = exportRows.length
+    ? `<button type="button" class="export-btn" id="exportCsvBtn">CSV ↓</button>`
     : '';
+  const pdfBtnHtml = `<button type="button" class="export-btn" id="exportPdfBtn">PDF ↓</button>`;
 
   el.innerHTML = `
     <div class="portfolio-header-row">
       <div class="portfolio-header">Portfolio</div>
-      ${exportBtnHtml}
+      <div class="export-btns">${csvBtnHtml}${pdfBtnHtml}</div>
     </div>
     ${totalHtml}
     <div class="portfolio-body">
@@ -1179,6 +1246,8 @@ function renderPortfolio(walletResults, exportRows = []) {
   if (exportRows.length) {
     document.getElementById('exportCsvBtn').addEventListener('click', () => downloadCsv(exportRows));
   }
+  const pdfBtn = document.getElementById('exportPdfBtn');
+  pdfBtn.addEventListener('click', () => downloadPdf(pdfBtn));
 }
 
 function buildPieSvg(slices, total) {

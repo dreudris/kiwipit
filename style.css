@@ -515,7 +515,12 @@ body {
   text-transform: uppercase;
 }
 
-.export-csv-btn {
+.export-btns {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.export-btn {
   background: transparent;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -523,11 +528,12 @@ body {
   cursor: pointer;
   font-size: 0.78rem;
   font-weight: 600;
-  padding: 0.4rem 0.8rem;
-  transition: color 0.15s, border-color 0.15s;
+  padding: 0.4rem 0.7rem;
+  transition: color 0.15s, border-color 0.15s, opacity 0.15s;
 }
-.export-csv-btn:hover  { color: var(--accent); border-color: var(--accent); }
-.export-csv-btn:active { opacity: 0.7; }
+.export-btn:hover    { color: var(--accent); border-color: var(--accent); }
+.export-btn:active   { opacity: 0.7; }
+.export-btn:disabled { cursor: wait; opacity: 0.6; }
 
 .portfolio-total {
   font-size: 2rem;
