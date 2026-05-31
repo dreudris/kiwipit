@@ -21,7 +21,7 @@ No install needed beyond wrangler. Alternatively, any static file server works (
 - `index.html` — single-page app shell; all DOM element IDs referenced by `app.js`
 - `style.css` — dark-theme styles; `--accent` CSS variable overridden per chain via JS
 - `app.js` — all chain logic: registry, detection, API fetchers, rendering, event wiring
-- `worker.js` — Worker entry (`main`): routes `/api/solana` to the RPC proxy, delegates everything else to the `ASSETS` binding (static files)
+- `worker.js` — Worker entry (`main`): routes `/api/solana` to the RPC proxy and `/api/evm/{chainId}` to the Routescan proxy, delegates everything else to the `ASSETS` binding (static files)
 - `_headers` — security headers. Uses Cloudflare Pages-style `/*` path-glob syntax (pre-dates the Workers migration). It still works under Workers Static Assets today, but if you add a Content-Security-Policy or other path-scoped rules, test that the glob actually matches in this deployment mode.
 - `wrangler.jsonc` — Cloudflare Workers config; `main: worker.js`, `assets.directory: "."`, `assets.binding: ASSETS`
 
@@ -80,7 +80,7 @@ All APIs are free, no API key required. CoinGecko provides USD prices for all ch
 - **`--accent` CSS variable** is set per-chain on `<html>` so all accent colors (balance, hover states, spinner) automatically match the selected chain.
 - **EVM address ambiguity**: a `0x` address works on all EVM networks; the app shows a network-selector tab row when one is detected. Active selection is tracked in `activeEvmChain`.
 - **EVM RPC fallback chain**: `apiEvmBalance` iterates `EVM_RPCS[evmKey]` until one succeeds (kept as dead code; `apiEvmFull` via Routescan is the live path).
-- **EVM tx list**: `apiEvmFull` calls Routescan's Etherscan-compat API (`api.routescan.io/v2/network/mainnet/evm/{chainId}/etherscan/api`). Each EVM chain in `CHAINS` has a `routescanId`.
+- **EVM tx list (proxied)**: `apiEvmFull` calls the same-origin `/api/evm/{chainId}` proxy, which forwards to Routescan's Etherscan-compat API (`api.routescan.io/v2/network/mainnet/evm/{chainId}/etherscan/api`). Direct browser calls to Routescan fail with `Load failed` on iOS WebKit (every browser on iOS, including Chrome/Brave/Edge, uses WebKit per Apple policy) and are blocked by some shields/firewalls. Each EVM chain in `CHAINS` has a `routescanId`. Routescan's free endpoint only supports chains 1 (ETH) and 43114 (AVAX) today — the other EVM chains return `chain not supported` and need an alternate upstream if/when they're re-enabled.
 - **EVM balance/value precision**: wei strings converted via `BigInt` to avoid float overflow: `Math.round(Number(wei / 1000n) / 1e15 * 10^decimals)`.
 - **Blockchair tx list**: `apiBlockchair` fetches the address dashboard (returns up to 100 tx hashes), then batch-fetches the first 10 via `/dashboards/transactions/{hashes}`; `renderBlockchairTxs` computes net +/− from `inputs[].recipient` / `outputs[].recipient` like Bitcoin.
 - **Solana needs a server-side proxy**: every free public Solana RPC fails from a browser — `api.mainnet-beta.solana.com` returns HTTP 403 to browser requests, `solana.publicnode.com` silently returns `[]` for `getSignaturesForAddress` (no history index), and ankr/drpc/etc. require API keys. So `worker.js` exposes `/api/solana`, which whitelists `getBalance`/`getSignaturesForAddress`/`getTransaction` and forwards server-side. **Upstream order matters**: `leorpc.com?api_key=FREE` is primary (keyless, indexes history, accepts datacenter IPs); `mainnet-beta` is the fallback but also blocks Cloudflare's egress IPs ("Your IP or provider is blocked"), so it's last-resort only. The worker iterates `SOLANA_UPSTREAMS` and only accepts an HTTP 200 with no JSON-RPC `error` field (some RPCs return 200 with an "IP blocked" error payload). On the client side, `SOL_RPCS` lists `/api/solana` first, then `publicnode` as a balance-only fallback. `getSignaturesForAddress` is called sequentially after `getBalance` so an error triggers fallback to the next endpoint; `getTransaction` calls (up to 10 in parallel) catch individually and fall back to `—` amounts.
@@ -90,15 +90,21 @@ All APIs are free, no API key required. CoinGecko provides USD prices for all ch
 
 Cloudflare Workers auto-deploys on every push to `main` (Workers Builds connected to the repo). Custom domain `kiwipit.com` is managed in the Cloudflare dashboard.
 
-After deploy, smoke-test the Solana proxy with a known address (Wrapped SOL mint — a public Solana system constant, always has a non-zero rent-exempt balance):
+After deploy, smoke-test both proxies:
 
 ```bash
+# Solana — Wrapped SOL mint, always has a non-zero rent-exempt balance
 curl -sX POST https://kiwipit.com/api/solana \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getBalance","params":["So11111111111111111111111111111111111111112"]}'
+
+# EVM — Vitalik's address on Ethereum mainnet, always present
+curl -s 'https://kiwipit.com/api/evm/1?module=account&action=balance&address=0xd8dA6BF26964aF9D7eeD9e03E53415D37aA96045'
 ```
 
-Expect `{"jsonrpc":"2.0","result":{"context":{...},"value":<lamports>},"id":1}` — not a 404 (route missing), not `{"error":"All Solana upstreams failed"}` (every upstream rejected the worker's egress IP).
+Expect Solana: `{"jsonrpc":"2.0","result":{"context":{...},"value":<lamports>},"id":1}` — not a 404 (route missing), not `{"error":"All Solana upstreams failed"}` (every upstream rejected the worker's egress IP).
+
+Expect EVM: `{"status":"1","message":"OK","result":"<wei>"}` — not `{"status":"0","message":"chain not allowed"}` (chainId off the whitelist) or `{"status":"0","message":"proxy error: ..."}` (upstream fetch failed).
 
 ## Git push auth
 

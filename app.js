@@ -270,7 +270,9 @@ async function apiBtcXpub(xpub) {
 
 async function apiEvmFull(chainKey, addr) {
   const c    = CHAINS[chainKey];
-  const base = `https://api.routescan.io/v2/network/mainnet/evm/${c.routescanId}/etherscan/api`;
+  // Same-origin proxy (worker.js → Routescan). Direct calls to api.routescan.io
+  // fail with "Load failed" on iOS WebKit and are blocked by some shields/firewalls.
+  const base = `/api/evm/${c.routescanId}`;
 
   const [balRes, txRes] = await Promise.all([
     fetch(`${base}?module=account&action=balance&address=${addr}`).then(r => r.json()),
