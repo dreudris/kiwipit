@@ -89,3 +89,7 @@ All APIs are free, no API key required. CoinGecko provides USD prices for all ch
 ## Deployment
 
 Cloudflare Workers auto-deploys on every push to `main` (Workers Builds connected to the repo). Custom domain `kiwipit.com` is managed in the Cloudflare dashboard. After deploy, verify the proxy: `curl -X POST https://kiwipit.com/api/solana -d '{"jsonrpc":"2.0","id":1,"method":"getBalance","params":["<addr>"]}'` should return JSON, not 404.
+
+## Git push auth
+
+The `origin` remote uses HTTPS and the user's PAT is stored via `git config --global credential.helper store` at `~/.git-credentials`. **Push directly with `git push origin main` — do not prompt the user for credentials.** If a push ever fails with an auth error, tell the user the stored token may have expired or been revoked; don't try to work around it.
