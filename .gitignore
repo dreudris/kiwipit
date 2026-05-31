@@ -4,3 +4,7 @@
 !.dev.vars.example
 .env*
 !.env.example
+
+# Claude Code per-machine state (local permission allowlist etc.)
+# .claude/memory/ IS tracked — see CLAUDE.md "Claude memory in this repo".
+.claude/settings.local.json

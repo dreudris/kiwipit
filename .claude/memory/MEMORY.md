@@ -1,0 +1,5 @@
+- [Portfolio phases (1–5) shipped](project_portfolio_phases.md) — roadmap complete as of 2026-05-31; treat new asks as new work, not roadmap continuation.
+- [Phased workflow](feedback_phased_workflow.md) — multi-feature work ships one phase per commit with a verify-on-prod pause between.
+- [Gate commits explicitly](feedback_gate_commits.md) — describe the diff and stop; the user types "commit and push" each time. Push to `main` is an instant prod deploy, so this is the only review gate.
+- [iOS WebKit → worker proxy](project_ios_webkit_proxy.md) — new third-party browser fetches default to a same-origin `/api/*` proxy; iOS Safari silently fails with "Load failed" on cross-origin fetches that work on desktop.
+- [Verify GitHub rendering via curl](feedback_verify_github_rendering.md) — `curl + grep` for `data-type="mermaid"` / `<table>`; WebFetch can't see JS-enriched content and reports false negatives.

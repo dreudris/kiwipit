@@ -106,6 +106,16 @@ Expect Solana: `{"jsonrpc":"2.0","result":{"context":{...},"value":<lamports>},"
 
 Expect EVM: `{"status":"1","message":"OK","result":"<wei>"}` — not `{"status":"0","message":"chain not allowed"}` (chainId off the whitelist) or `{"status":"0","message":"proxy error: ..."}` (upstream fetch failed).
 
+## Claude memory in this repo
+
+Claude Code's auto-memory files live in this repo at `.claude/memory/` (versioned in git, indexed by `.claude/memory/MEMORY.md`). The Claude Code harness auto-loads memory from `~/.claude/projects/-home-<user>-kiwipit/memory/`, so on each clone the user creates a symlink:
+
+```bash
+ln -s "$(pwd)/.claude/memory" ~/.claude/projects/-home-$USER-kiwipit/memory
+```
+
+Without the symlink, memory still exists in the repo but won't auto-load — future Claude sessions would have to read it manually from `.claude/memory/MEMORY.md`. The local permission allowlist (`.claude/settings.local.json`) stays per-machine and is git-ignored.
+
 ## Git push auth
 
 The `origin` remote uses HTTPS and the user's PAT is stored via `git config --global credential.helper store` at `~/.git-credentials`. **Push directly with `git push origin main` — do not prompt the user for credentials.** If a push ever fails with an auth error, tell the user the stored token may have expired or been revoked; don't try to work around it.
