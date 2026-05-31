@@ -475,48 +475,50 @@ async function apiSol(addr) {
 }
 
 // ─── Rendering ────────────────────────────────────────────────────────────────
+//
+// All render* functions take a `card` element (the .wallet-card root for one
+// wallet) and use card.querySelector(...). This lets multiple wallets render
+// independently into their own cards.
 
-function setChainTheme(chainKey) {
+function paintCardAccent(chainKey, card) {
   const c = CHAINS[chainKey];
-  if (!c) return;
-  document.documentElement.style.setProperty('--accent', c.color);
+  if (c) card.style.setProperty('--accent', c.color);
 }
 
-function renderChainHeader(chainKey, addr) {
+function renderChainHeader(chainKey, addr, card) {
   const c = CHAINS[chainKey];
-  const badge = document.getElementById('chainBadge');
-  badge.textContent  = `${c.icon} ${c.name}`;
-  badge.style.color  = c.color;
+  const badge = card.querySelector('.chain-badge');
+  badge.textContent       = `${c.icon} ${c.name}`;
+  badge.style.color       = c.color;
   badge.style.borderColor = c.color;
 
-  const link = document.getElementById('explorerAddrLink');
-  link.href = c.explorer.addr + encodeURIComponent(addr);
+  card.querySelector('.explorer-addr-link').href = c.explorer.addr + encodeURIComponent(addr);
 }
 
-function renderBalance(raw, chain) {
+function renderBalance(raw, chain, card) {
   const c = CHAINS[chain];
-  document.getElementById('balanceAmount').textContent = fmtAmount(raw, c.decimals, c.symbol);
-  document.getElementById('balanceUsd').textContent    = fmtFiat(raw, c.decimals, c.cgId);
+  card.querySelector('.balance-amount').textContent = fmtAmount(raw, c.decimals, c.symbol);
+  card.querySelector('.balance-usd').textContent    = fmtFiat(raw, c.decimals, c.cgId);
 }
 
-function renderStats(received, sent, txCount, chain) {
+function renderStats(received, sent, txCount, chain, card) {
   const c = CHAINS[chain];
-  const row = document.getElementById('statsRow');
+  const row = card.querySelector('.stats-row');
 
   if (received === null && sent === null && txCount === null) {
     row.classList.add('hidden');
     return;
   }
   row.classList.remove('hidden');
-  document.getElementById('statReceived').textContent = received !== null ? fmtAmount(received, c.decimals, c.symbol) : '—';
-  document.getElementById('statSent').textContent     = sent     !== null ? fmtAmount(sent,     c.decimals, c.symbol) : '—';
-  document.getElementById('statTxCount').textContent  = txCount  !== null ? txCount.toLocaleString() : '—';
+  row.querySelector('.stat-received').textContent = received !== null ? fmtAmount(received, c.decimals, c.symbol) : '—';
+  row.querySelector('.stat-sent').textContent     = sent     !== null ? fmtAmount(sent,     c.decimals, c.symbol) : '—';
+  row.querySelector('.stat-txcount').textContent  = txCount  !== null ? txCount.toLocaleString() : '—';
 }
 
 // Bitcoin: full net-per-address tx list
-function renderBtcTxs(txs, addr, chain) {
+function renderBtcTxs(txs, addr, chain, card) {
   const c    = CHAINS[chain];
-  const list = document.getElementById('txList');
+  const list = card.querySelector('.tx-list');
 
   if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
@@ -545,9 +547,9 @@ function renderBtcTxs(txs, addr, chain) {
 }
 
 // Blockchair chains (LTC, DOGE, BCH, DASH): net-per-address tx list
-function renderBlockchairTxs(txs, addr, chain) {
+function renderBlockchairTxs(txs, addr, chain, card) {
   const c    = CHAINS[chain];
-  const list = document.getElementById('txList');
+  const list = card.querySelector('.tx-list');
   if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
   list.innerHTML = txs.map(({ hash, transaction: txData, inputs = [], outputs = [] }) => {
@@ -579,9 +581,9 @@ function renderBlockchairTxs(txs, addr, chain) {
 }
 
 // EVM: full transaction list (Routescan / Etherscan-compat)
-function renderEvmTxs(txs, addr, chain) {
+function renderEvmTxs(txs, addr, chain, card) {
   const c    = CHAINS[chain];
-  const list = document.getElementById('txList');
+  const list = card.querySelector('.tx-list');
   if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
   const addrLower = addr.toLowerCase();
@@ -607,9 +609,9 @@ function renderEvmTxs(txs, addr, chain) {
 }
 
 // TRX: transaction list from TronGrid (direction via hex address comparison)
-function renderTrxTxs(txs, hexAddr, chain) {
+function renderTrxTxs(txs, hexAddr, chain, card) {
   const c    = CHAINS[chain];
-  const list = document.getElementById('txList');
+  const list = card.querySelector('.tx-list');
   if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
   list.innerHTML = txs.map(tx => {
@@ -641,9 +643,9 @@ function renderTrxTxs(txs, hexAddr, chain) {
 }
 
 // XRP: transaction list from XRPL
-function renderXrpTxs(txs, addr, chain) {
+function renderXrpTxs(txs, addr, chain, card) {
   const c    = CHAINS[chain];
-  const list = document.getElementById('txList');
+  const list = card.querySelector('.tx-list');
   if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
   // XRPL epoch offset: Jan 1 2000 = 946684800 Unix
@@ -675,9 +677,9 @@ function renderXrpTxs(txs, addr, chain) {
 }
 
 // Solana: recent transactions with net SOL change per address
-function renderSolTxs(txs, chain) {
+function renderSolTxs(txs, chain, card) {
   const c    = CHAINS[chain];
-  const list = document.getElementById('txList');
+  const list = card.querySelector('.tx-list');
   if (!txs?.length) { list.innerHTML = '<p class="tx-empty">No transactions found.</p>'; return; }
 
   list.innerHTML = txs.map(tx => {
@@ -702,9 +704,9 @@ function renderSolTxs(txs, chain) {
 }
 
 // Explorer-link fallback for chains without a full tx list
-function renderExplorerFallback(addr, chain) {
+function renderExplorerFallback(addr, chain, card) {
   const c    = CHAINS[chain];
-  const list = document.getElementById('txList');
+  const list = card.querySelector('.tx-list');
   list.innerHTML = `<a class="explorer-btn" href="${c.explorer.addr}${encodeURIComponent(addr)}" target="_blank" rel="noopener noreferrer">
   View full transaction history on ${new URL(c.explorer.addr).hostname} ↗
 </a>`;
@@ -712,80 +714,75 @@ function renderExplorerFallback(addr, chain) {
 
 // ─── Unified Lookup ───────────────────────────────────────────────────────────
 
-async function lookupChain(rawInput, chainKey) {
+async function lookupChain(rawInput, chainKey, card) {
   const input = rawInput.trim();
   const c     = CHAINS[chainKey];
 
-  document.getElementById('addressLabel').textContent =
+  card.querySelector('.address-label').textContent =
     input.length > 60 ? input.slice(0, 24) + '…' + input.slice(-12) : input;
 
-  setChainTheme(chainKey);
-  renderChainHeader(chainKey, input);
-
-  const statsRow   = document.getElementById('statsRow');
-  const txSection  = document.getElementById('txSection');
-  statsRow.classList.remove('hidden');
-  txSection.classList.remove('hidden');
+  paintCardAccent(chainKey, card);
+  renderChainHeader(chainKey, input, card);
 
   // ── Bitcoin ──
   if (chainKey === 'btc') {
     const d = await apiBtcAddress(input);
-    renderBalance(d.balance, 'btc');
-    renderStats(d.received, d.spent, d.txCount, 'btc');
-    renderBtcTxs(d.txs, d.txAddr, 'btc');
+    renderBalance(d.balance, 'btc', card);
+    renderStats(d.received, d.spent, d.txCount, 'btc', card);
+    renderBtcTxs(d.txs, d.txAddr, 'btc', card);
     return;
   }
 
   if (chainKey === 'btc-xpub') {
     const d = await apiBtcXpub(input);
-    renderBalance(d.balance, 'btc');
-    renderStats(d.received, d.spent, d.txCount, 'btc');
-    renderBtcTxs(d.txs, null, 'btc');
+    renderBalance(d.balance, 'btc', card);
+    renderStats(d.received, d.spent, d.txCount, 'btc', card);
+    renderBtcTxs(d.txs, null, 'btc', card);
     return;
   }
 
   // ── EVM chains (ETH, BNB, MATIC, AVAX, ARB, OP) ──
   if (c.evmKey) {
     const d = await apiEvmFull(chainKey, input);
-    renderBalance(d.balanceRaw, chainKey);
-    renderStats(null, null, null, chainKey);
-    renderEvmTxs(d.txs, input, chainKey);
+    renderBalance(d.balanceRaw, chainKey, card);
+    renderStats(null, null, null, chainKey, card);
+    renderEvmTxs(d.txs, input, chainKey, card);
     return;
   }
 
   // ── Blockchair chains (LTC, DOGE, BCH, DASH) ──
   if (c.blockchairKey) {
     const d = await apiBlockchair(c.blockchairKey, input);
-    renderBalance(d.balance, chainKey);
-    renderStats(d.received, d.spent, d.txCount, chainKey);
-    renderBlockchairTxs(d.txs, input, chainKey);
+    renderBalance(d.balance, chainKey, card);
+    renderStats(d.received, d.spent, d.txCount, chainKey, card);
+    renderBlockchairTxs(d.txs, input, chainKey, card);
     return;
   }
 
   // ── Tron ──
   if (chainKey === 'trx') {
     const d = await apiTrx(input);
-    renderBalance(d.balance, 'trx');
-    renderStats(null, null, d.txCount || null, 'trx');
-    renderTrxTxs(d.txs, d.hexAddr, 'trx');
+    renderBalance(d.balance, 'trx', card);
+    renderStats(null, null, d.txCount || null, 'trx', card);
+    renderTrxTxs(d.txs, d.hexAddr, 'trx', card);
     return;
   }
 
   // ── XRP ──
   if (chainKey === 'xrp') {
     const d = await apiXrp(input);
-    renderBalance(d.balance, 'xrp');
-    renderStats(null, null, null, 'xrp');
-    renderXrpTxs(d.txs, input, 'xrp');
+    renderBalance(d.balance, 'xrp', card);
+    renderStats(null, null, null, 'xrp', card);
+    renderXrpTxs(d.txs, input, 'xrp', card);
     return;
   }
 
   // ── Solana ──
   if (chainKey === 'sol') {
     const d = await apiSol(input);
-    renderBalance(d.balance, 'sol');
-    renderStats(null, null, null, 'sol');
-    renderSolTxs(d.txs, 'sol');
+    renderBalance(d.balance, 'sol', card);
+    renderStats(null, null, null, 'sol', card);
+    renderSolTxs(d.txs, 'sol', card);
     return;
   }
 
@@ -804,74 +801,162 @@ function setError(msg) {
   el.classList.toggle('hidden', !msg);
 }
 
-function setResults(show) {
-  document.getElementById('results').classList.toggle('hidden', !show);
-}
+// ─── Wallet rows (multi-input) ────────────────────────────────────────────────
 
-// ─── EVM network selector ─────────────────────────────────────────────────────
+let nextWalletId = 1;
 
-let activeEvmChain = 'eth';
+function makeWalletRow() {
+  const id = nextWalletId++;
+  const row = document.createElement('div');
+  row.className = 'wallet-row';
+  row.dataset.id      = String(id);
+  row.dataset.evmChain = 'eth';
+  row.innerHTML = `
+    <div class="search-row">
+      <div class="input-wrap">
+        <input type="text" class="search-input wallet-input"
+          placeholder="Paste any wallet address or public key…"
+          autocomplete="off" spellcheck="false" />
+        <span class="detected-chip hidden"></span>
+      </div>
+      <button type="button" class="remove-wallet" title="Remove wallet" aria-label="Remove wallet">×</button>
+    </div>
+    <div class="evm-selector hidden">
+      <span class="evm-label">Select network:</span>
+      <div class="evm-tabs">${EVM_CHAINS.map(key => {
+        const c = CHAINS[key];
+        return `<button type="button" class="evm-tab${key === 'eth' ? ' active' : ''}"
+          data-chain="${key}" style="--tab-color:${c.color}">${c.symbol === 'ETH' ? c.name : c.symbol}</button>`;
+      }).join('')}</div>
+    </div>
+  `;
 
-function buildEvmTabs() {
-  const container = document.getElementById('evmTabs');
-  container.innerHTML = EVM_CHAINS.map(key => {
-    const c = CHAINS[key];
-    return `<button class="evm-tab${key === 'eth' ? ' active' : ''}"
-      data-chain="${key}"
-      style="--tab-color:${c.color}"
-    >${c.symbol === 'ETH' ? c.name : c.symbol}</button>`;
-  }).join('');
-
-  container.addEventListener('click', e => {
+  const tabs = row.querySelector('.evm-tabs');
+  tabs.addEventListener('click', e => {
     const btn = e.target.closest('.evm-tab');
     if (!btn) return;
-    container.querySelectorAll('.evm-tab').forEach(b => b.classList.remove('active'));
+    tabs.querySelectorAll('.evm-tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    activeEvmChain = btn.dataset.chain;
+    row.dataset.evmChain = btn.dataset.chain;
+  });
+
+  const input = row.querySelector('.wallet-input');
+  let timer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => updateRowDetection(row), 150);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') handleLookupAll();
+  });
+
+  row.querySelector('.remove-wallet').addEventListener('click', () => {
+    row.remove();
+    updateRemoveButtons();
+  });
+
+  return row;
+}
+
+function updateRowDetection(row) {
+  const val      = row.querySelector('.wallet-input').value.trim();
+  const detected = detectChain(val);
+  const chip     = row.querySelector('.detected-chip');
+  const evmSel   = row.querySelector('.evm-selector');
+
+  if (!detected || detected === 'evm') {
+    chip.classList.add('hidden');
+  } else {
+    const key = detected === 'btc-xpub' ? 'btc' : detected;
+    const c   = CHAINS[key];
+    if (c) {
+      chip.textContent      = `${c.icon} ${c.symbol}`;
+      chip.style.color      = c.color;
+      chip.style.background = c.color + '22';
+      chip.classList.remove('hidden');
+    }
+  }
+
+  evmSel.classList.toggle('hidden', detected !== 'evm');
+}
+
+function updateRemoveButtons() {
+  const rows = document.querySelectorAll('.wallet-row');
+  rows.forEach(row => {
+    row.querySelector('.remove-wallet').hidden = rows.length === 1;
   });
 }
 
-function showEvmSelector(show) {
-  document.getElementById('evmSelector').classList.toggle('hidden', !show);
+function addWalletRow(focus = true) {
+  const row = makeWalletRow();
+  document.getElementById('walletList').appendChild(row);
+  updateRemoveButtons();
+  if (focus) row.querySelector('.wallet-input').focus();
+  return row;
 }
 
-function updateDetectedChip(detected) {
-  const chip = document.getElementById('detectedChip');
-  if (!detected || detected === 'evm') {
-    chip.classList.add('hidden');
-    return;
-  }
-  const key = detected === 'btc-xpub' ? 'btc' : detected;
-  const c   = CHAINS[key];
-  if (!c) { chip.classList.add('hidden'); return; }
-  chip.textContent        = `${c.icon} ${c.symbol}`;
-  chip.style.color        = c.color;
-  chip.style.background   = c.color + '22';
-  chip.classList.remove('hidden');
+// ─── Wallet result card ──────────────────────────────────────────────────────
+
+function makeWalletCard() {
+  const card = document.createElement('div');
+  card.className = 'wallet-card';
+  card.innerHTML = `
+    <div class="chain-header">
+      <div class="chain-badge"></div>
+      <a class="explorer-addr-link" href="#" target="_blank" rel="noopener noreferrer">View on explorer ↗</a>
+    </div>
+    <p class="address-label"></p>
+    <div class="balance-card">
+      <span class="balance-label">Balance</span>
+      <span class="balance-amount">—</span>
+      <span class="balance-usd"></span>
+    </div>
+    <div class="stats-row hidden">
+      <div class="stat-card"><span class="stat-label">Total Received</span><span class="stat-value green stat-received">—</span></div>
+      <div class="stat-card"><span class="stat-label">Total Sent</span><span class="stat-value red stat-sent">—</span></div>
+      <div class="stat-card"><span class="stat-label">Transactions</span><span class="stat-value stat-txcount">—</span></div>
+    </div>
+    <div class="tx-section">
+      <h2 class="tx-header">Recent Transactions</h2>
+      <div class="tx-list"></div>
+    </div>
+  `;
+  return card;
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
-async function handleLookup() {
-  const input    = document.getElementById('addressInput').value.trim();
-  if (!input) return;
+async function handleLookupAll() {
+  const rows  = [...document.querySelectorAll('.wallet-row')];
+  const tasks = rows
+    .map(row => ({ row, input: row.querySelector('.wallet-input').value.trim() }))
+    .filter(t => t.input);
 
-  const detected = detectChain(input);
+  if (tasks.length === 0) return;
 
   setLoading(true);
   setError('');
-  setResults(false);
+
+  const results = document.getElementById('results');
+  results.innerHTML = '';
+  results.classList.remove('hidden');
 
   try {
     await fetchPrices();
 
-    if (!detected) {
-      throw new Error('Address format not recognised. Supported: Bitcoin, Ethereum (0x…), Solana, Tron (T…), XRP (r…), Litecoin (L…/M…), Dogecoin (D…), Dash (X…), Bitcoin Cash, and xpub/ypub/zpub keys.');
-    }
-
-    const chainKey = detected === 'evm' ? activeEvmChain : detected;
-    await lookupChain(input, chainKey);
-    setResults(true);
+    await Promise.all(tasks.map(async ({ row, input }) => {
+      const card = makeWalletCard();
+      results.appendChild(card);
+      try {
+        const detected = detectChain(input);
+        if (!detected) throw new Error('Address format not recognised.');
+        const chainKey = detected === 'evm' ? (row.dataset.evmChain || 'eth') : detected;
+        await lookupChain(input, chainKey, card);
+      } catch (err) {
+        const short = input.length > 50 ? input.slice(0, 24) + '…' + input.slice(-8) : input;
+        card.innerHTML = `<div class="wallet-card-error"><strong>${short}</strong> — ${err.message || 'Lookup failed.'}</div>`;
+      }
+    }));
   } catch (err) {
     setError(err.message || 'Something went wrong. Please try again.');
   } finally {
@@ -879,26 +964,10 @@ async function handleLookup() {
   }
 }
 
-// ─── Input auto-detect ────────────────────────────────────────────────────────
-
-let detectTimer = null;
-
-document.getElementById('addressInput').addEventListener('input', () => {
-  clearTimeout(detectTimer);
-  detectTimer = setTimeout(() => {
-    const val      = document.getElementById('addressInput').value.trim();
-    const detected = detectChain(val);
-    updateDetectedChip(detected);
-    showEvmSelector(detected === 'evm');
-  }, 150);
-});
-
 // ─── Events ───────────────────────────────────────────────────────────────────
 
-document.getElementById('lookupBtn').addEventListener('click', handleLookup);
-document.getElementById('addressInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') handleLookup();
-});
+document.getElementById('lookupBtn').addEventListener('click', handleLookupAll);
+document.getElementById('addWalletBtn').addEventListener('click', () => addWalletRow());
 
 // ─── Currency switcher ───────────────────────────────────────────────────────
 
@@ -916,11 +985,11 @@ document.getElementById('currencySwitch').addEventListener('click', e => {
   paintCurrencyButtons();
   // Re-run the active lookup so all fiat values refresh in the new currency.
   if (!document.getElementById('results').classList.contains('hidden')) {
-    handleLookup();
+    handleLookupAll();
   }
 });
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
-buildEvmTabs();
+addWalletRow(false);
 paintCurrencyButtons();

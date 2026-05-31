@@ -26,28 +26,15 @@
     <main class="main">
 
       <div class="search-box">
-        <div class="search-row">
-          <div class="input-wrap">
-            <input
-              type="text"
-              id="addressInput"
-              class="search-input"
-              placeholder="Paste any wallet address or public key…"
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <span id="detectedChip" class="detected-chip hidden"></span>
-          </div>
-          <button id="lookupBtn" class="search-btn">Look up</button>
-        </div>
+        <div id="walletList"></div>
 
-        <div id="evmSelector" class="evm-selector hidden">
-          <span class="evm-label">Select network:</span>
-          <div class="evm-tabs" id="evmTabs"></div>
+        <div class="wallet-controls">
+          <button type="button" id="addWalletBtn" class="add-wallet-btn">+ Add wallet</button>
+          <button type="button" id="lookupBtn" class="search-btn">Look up all</button>
         </div>
 
         <p class="search-hint">
-          Supports <strong>Bitcoin, Ethereum, Solana, Tron, XRP, Litecoin, Dogecoin, BNB Chain, Polygon, Avalanche, Arbitrum, Optimism, Bitcoin Cash, Dash</strong> — chain is auto-detected from the address format.
+          Supports <strong>Bitcoin, Ethereum, Solana, Tron, XRP, Litecoin, Dogecoin, BNB Chain, Polygon, Avalanche, Arbitrum, Optimism, Bitcoin Cash, Dash</strong> — chain is auto-detected from each address.
         </p>
       </div>
 
@@ -58,44 +45,7 @@
 
       <div id="error" class="error-box hidden"></div>
 
-      <div id="results" class="results hidden">
-
-        <div class="chain-header">
-          <div id="chainBadge" class="chain-badge"></div>
-          <a id="explorerAddrLink" class="explorer-addr-link" href="#" target="_blank" rel="noopener noreferrer">
-            View on explorer ↗
-          </a>
-        </div>
-
-        <p class="address-label" id="addressLabel"></p>
-
-        <div class="balance-card" id="balanceCard">
-          <span class="balance-label">Balance</span>
-          <span id="balanceAmount" class="balance-amount">—</span>
-          <span id="balanceUsd" class="balance-usd"></span>
-        </div>
-
-        <div class="stats-row" id="statsRow">
-          <div class="stat-card">
-            <span class="stat-label">Total Received</span>
-            <span id="statReceived" class="stat-value green">—</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">Total Sent</span>
-            <span id="statSent" class="stat-value red">—</span>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">Transactions</span>
-            <span id="statTxCount" class="stat-value">—</span>
-          </div>
-        </div>
-
-        <div id="txSection" class="tx-section">
-          <h2 class="tx-header">Recent Transactions</h2>
-          <div id="txList"></div>
-        </div>
-
-      </div>
+      <div id="results" class="results hidden"></div>
     </main>
 
     <footer class="footer">

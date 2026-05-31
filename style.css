@@ -150,6 +150,68 @@ body {
 .search-btn:hover  { opacity: 0.85; }
 .search-btn:active { opacity: 0.70; }
 
+/* ── Wallet rows (multi-input) ── */
+.wallet-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.wallet-row .search-row { display: flex; gap: 0.5rem; }
+
+.remove-wallet {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.7rem;
+  transition: color 0.15s, border-color 0.15s;
+}
+.remove-wallet:hover { color: var(--red); border-color: var(--red); }
+.remove-wallet[hidden] { display: none; }
+
+.wallet-controls {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  justify-content: space-between;
+}
+
+.add-wallet-btn {
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.55rem 1rem;
+  transition: color 0.15s, border-color 0.15s;
+}
+.add-wallet-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+/* ── Wallet result card (one per looked-up wallet) ── */
+.wallet-card {
+  background: rgba(255,255,255,0.015);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.wallet-card + .wallet-card { margin-top: 0; }
+.wallet-card .balance-card { margin-bottom: 1rem; }
+.wallet-card .tx-section { margin-bottom: 0.25rem; }
+.wallet-card-error {
+  color: var(--red);
+  font-size: 0.85rem;
+  padding: 0.75rem 0;
+}
+
 /* ── EVM network selector ── */
 .evm-selector {
   margin-top: 0.75rem;
