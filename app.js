@@ -112,22 +112,30 @@ const EVM_RPCS = {
   ],
 };
 
-// ─── Prices ───────────────────────────────────────────────────────────────────
+// ─── Prices & currency ───────────────────────────────────────────────────────
+
+const CURRENCIES = {
+  usd: { code: 'USD', locale: 'en-US' },
+  eur: { code: 'EUR', locale: 'de-DE' },
+  brl: { code: 'BRL', locale: 'pt-BR' },
+};
 
 let prices = {};
+let activeCurrency = localStorage.getItem('kp.currency') || 'usd';
+if (!CURRENCIES[activeCurrency]) activeCurrency = 'usd';
 
 async function fetchPrices() {
   try {
     const ids = [...new Set(Object.values(CHAINS).map(c => c.cgId))].join(',');
     const r   = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`
+      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd,eur,brl`
     );
     if (r.ok) prices = await r.json();
   } catch { /* prices are optional */ }
 }
 
-function priceUsd(cgId) {
-  return prices[cgId]?.usd ?? null;
+function priceFor(cgId) {
+  return prices[cgId]?.[activeCurrency] ?? null;
 }
 
 // ─── Formatting ───────────────────────────────────────────────────────────────
@@ -139,11 +147,17 @@ function fmtAmount(raw, decimals, symbol) {
   return (s || '0') + ' ' + symbol;
 }
 
-function fmtUsd(raw, decimals, cgId) {
-  const p = priceUsd(cgId);
+function fmtFiat(raw, decimals, cgId) {
+  const p = priceFor(cgId);
   if (!p || !raw) return '';
-  const usd = (raw / Math.pow(10, decimals)) * p;
-  return '≈ $' + usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const value = (raw / Math.pow(10, decimals)) * p;
+  const { code, locale } = CURRENCIES[activeCurrency];
+  return '≈ ' + new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: code,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
 }
 
 function fmtDate(ts) {
@@ -482,7 +496,7 @@ function renderChainHeader(chainKey, addr) {
 function renderBalance(raw, chain) {
   const c = CHAINS[chain];
   document.getElementById('balanceAmount').textContent = fmtAmount(raw, c.decimals, c.symbol);
-  document.getElementById('balanceUsd').textContent    = fmtUsd(raw, c.decimals, c.cgId);
+  document.getElementById('balanceUsd').textContent    = fmtFiat(raw, c.decimals, c.cgId);
 }
 
 function renderStats(received, sent, txCount, chain) {
@@ -524,7 +538,7 @@ function renderBtcTxs(txs, addr, chain) {
   </div>
   <div class="tx-right">
     <div class="tx-amount ${cls}">${absNet !== null ? prefix + fmtAmount(absNet, c.decimals, c.symbol) : '—'}</div>
-    <div class="tx-usd">${absNet !== null ? fmtUsd(absNet, c.decimals, c.cgId) : ''}</div>
+    <div class="tx-usd">${absNet !== null ? fmtFiat(absNet, c.decimals, c.cgId) : ''}</div>
   </div>
 </div>`;
   }).join('');
@@ -558,7 +572,7 @@ function renderBlockchairTxs(txs, addr, chain) {
   </div>
   <div class="tx-right">
     <div class="tx-amount ${cls}">${prefix}${fmtAmount(absNet, c.decimals, c.symbol)}</div>
-    <div class="tx-usd">${fmtUsd(absNet, c.decimals, c.cgId)}</div>
+    <div class="tx-usd">${fmtFiat(absNet, c.decimals, c.cgId)}</div>
   </div>
 </div>`;
   }).join('');
@@ -586,7 +600,7 @@ function renderEvmTxs(txs, addr, chain) {
   </div>
   <div class="tx-right">
     <div class="tx-amount ${cls}">${prefix}${fmtAmount(tx.valueRaw, c.decimals, c.symbol)}</div>
-    <div class="tx-usd">${fmtUsd(tx.valueRaw, c.decimals, c.cgId)}</div>
+    <div class="tx-usd">${fmtFiat(tx.valueRaw, c.decimals, c.cgId)}</div>
   </div>
 </div>`;
   }).join('');
@@ -620,7 +634,7 @@ function renderTrxTxs(txs, hexAddr, chain) {
   </div>
   <div class="tx-right">
     <div class="tx-amount ${cls}">${prefix}${fmtAmount(amount, c.decimals, c.symbol)}</div>
-    <div class="tx-usd">${fmtUsd(amount, c.decimals, c.cgId)}</div>
+    <div class="tx-usd">${fmtFiat(amount, c.decimals, c.cgId)}</div>
   </div>
 </div>`;
   }).join('');
@@ -654,7 +668,7 @@ function renderXrpTxs(txs, addr, chain) {
   </div>
   <div class="tx-right">
     <div class="tx-amount ${cls}">${prefix}${fmtAmount(amount, c.decimals, c.symbol)}</div>
-    <div class="tx-usd">${fmtUsd(amount, c.decimals, c.cgId)}</div>
+    <div class="tx-usd">${fmtFiat(amount, c.decimals, c.cgId)}</div>
   </div>
 </div>`;
   }).join('');
@@ -681,7 +695,7 @@ function renderSolTxs(txs, chain) {
   </div>
   <div class="tx-right">
     <div class="tx-amount ${cls}">${absNet !== null ? prefix + fmtAmount(absNet, c.decimals, c.symbol) : '—'}</div>
-    <div class="tx-usd">${absNet !== null ? fmtUsd(absNet, c.decimals, c.cgId) : ''}</div>
+    <div class="tx-usd">${absNet !== null ? fmtFiat(absNet, c.decimals, c.cgId) : ''}</div>
   </div>
 </div>`;
   }).join('');
@@ -886,6 +900,27 @@ document.getElementById('addressInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') handleLookup();
 });
 
+// ─── Currency switcher ───────────────────────────────────────────────────────
+
+function paintCurrencyButtons() {
+  document.querySelectorAll('#currencySwitch .currency-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.currency === activeCurrency);
+  });
+}
+
+document.getElementById('currencySwitch').addEventListener('click', e => {
+  const btn = e.target.closest('.currency-btn');
+  if (!btn || btn.dataset.currency === activeCurrency) return;
+  activeCurrency = btn.dataset.currency;
+  localStorage.setItem('kp.currency', activeCurrency);
+  paintCurrencyButtons();
+  // Re-run the active lookup so all fiat values refresh in the new currency.
+  if (!document.getElementById('results').classList.contains('hidden')) {
+    handleLookup();
+  }
+});
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 buildEvmTabs();
+paintCurrencyButtons();
