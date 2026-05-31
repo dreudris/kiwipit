@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> Companion docs: `README.md` is the user-facing overview (with a Mermaid architecture diagram). `.claude/memory/MEMORY.md` indexes prior-session context that auto-loads into future Claude sessions (see the Claude memory section below for the symlink setup).
+
 ## Project
 
 **KiwiPit** — a multi-chain crypto wallet viewer deployed at [kiwipit.com](https://kiwipit.com) via Cloudflare Workers (Static Assets + a small Worker for the Solana proxy).
@@ -14,9 +16,32 @@ No build step for the frontend. Pure HTML/CSS/JS — edit and push to deploy.
 npx wrangler dev   # serves the site at localhost:8787 via wrangler.jsonc
 ```
 
-No install needed beyond wrangler. Alternatively, any static file server works (`python3 -m http.server`).
+No install needed beyond wrangler. Alternatively, any static file server works (`python3 -m http.server`) — but a plain static server won't run `worker.js`, so the `/api/solana` and `/api/evm/{chainId}` proxy routes will 404. Use `wrangler dev` to exercise those.
+
+Smoke-test the proxies locally once `wrangler dev` is up — same payloads as the production smoke tests in the Deployment section, just against `http://localhost:8787`:
+
+```bash
+curl -sX POST http://localhost:8787/api/solana \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getBalance","params":["So11111111111111111111111111111111111111112"]}'
+
+curl -s 'http://localhost:8787/api/evm/1?module=account&action=balance&address=0xd8dA6BF26964aF9D7eeD9e03E53415D37aA96045'
+```
 
 ## Stack
+
+Quick file map (each file's role at a glance — details in the bullets below):
+
+| File | Role |
+|------|------|
+| `index.html` | SPA shell; DOM IDs consumed by `app.js`; pinned-SRI `<script>` tags for html2canvas + jsPDF |
+| `app.js` | All chain logic — `CHAINS` registry, `detectChain`, `lookupChain`, `api*` fetchers, `render*` writers, portfolio + CSV/PDF export |
+| `style.css` | Dark-theme styles; `--accent` swapped per chain |
+| `worker.js` | Worker entry; `/api/solana` + `/api/evm/{chainId}` proxies, else `ASSETS` binding |
+| `wrangler.jsonc` | Workers config: `main: worker.js`, `assets.directory: "."`, `assets.binding: ASSETS` |
+| `_headers` | Static security headers (Pages-style glob, still honored by Static Assets) |
+| `.claude/memory/` | Auto-memory for Claude Code, symlinked from `~/.claude/projects/...` |
+
 
 - `index.html` — single-page app shell; all DOM element IDs referenced by `app.js`
 - `style.css` — dark-theme styles; `--accent` CSS variable overridden per chain via JS
@@ -26,6 +51,8 @@ No install needed beyond wrangler. Alternatively, any static file server works (
 - `wrangler.jsonc` — Cloudflare Workers config; `main: worker.js`, `assets.directory: "."`, `assets.binding: ASSETS`
 
 > **Deployment is Cloudflare Workers Static Assets, not Pages.** The Pages-only `functions/` directory convention does NOT work here — dynamic routes must live in `worker.js` behind the `ASSETS` binding.
+
+> **`assets.directory: "."` ships the entire repo root as static files.** Anything you drop in the root is publicly served at `https://kiwipit.com/<name>`. There is no build step or `dist/` filter — `CLAUDE.md`, `README.md`, and `wrangler.jsonc` happen to be harmless, but never put secrets, large binaries, or scratch files in the root. New tooling output belongs in a gitignored subdirectory (or a sibling repo), not at the root.
 
 ## Code flow in `app.js`
 
