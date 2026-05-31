@@ -108,10 +108,9 @@ The `origin` remote uses HTTPS and the user's PAT is stored via `git config --gl
 
 Multi-wallet portfolio support is being shipped in phases, one commit per phase pushed to `main` for the user to verify on `kiwipit.com` before the next one starts. Workflow: implement → commit → push → wait for user approval ("go" / "approved") before continuing.
 
-Phases 1 (currency switcher) and 2 (multi-wallet inputs) are merged — see `git log` for the actual implementation. Pending:
+Phases 1 (currency switcher), 2 (multi-wallet inputs), and 3 (portfolio summary + pie chart, aggregated by `cgId`) are merged — see `git log` and `renderPortfolio` in `app.js` for the actual implementation. `lookupChain` branches now return `{ chainKey, balanceRaw }` so `handleLookupAll` can hand results to `renderPortfolio`. Pending:
 
-- **Phase 3 — Portfolio summary + pie chart.** Aggregate by `c.cgId` (so ETH on mainnet/Arbitrum/Optimism collapse into one slice). Inline SVG pie + legend above `#results`. Refactor `lookupChain` branches to return `{ chainKey, balanceRaw }` so `handleLookupAll` can hand results to `renderPortfolio`.
 - **Phase 4 — CSV export.** Per-transaction rows across all wallets. Will likely need a `normalizeTxs(rawTxs, chainKey, addr)` helper since each chain currently computes direction/amount inline in its `render*` function.
 - **Phase 5 — PDF export.** `html2canvas` + `jsPDF` via CDN `<script defer>` tags (keeps the no-build-step constraint). `_headers` has no CSP today, so CDN scripts load without changes.
 
-Worker proxy stays as-is for all three phases; no new dynamic routes.
+Worker proxy stays as-is for both phases; no new dynamic routes.
