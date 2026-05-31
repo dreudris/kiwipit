@@ -724,13 +724,18 @@ async function lookupChain(rawInput, chainKey, card) {
   paintCardAccent(chainKey, card);
   renderChainHeader(chainKey, input, card);
 
+  // Each branch returns { chainKey, balanceRaw } — chainKey is a valid CHAINS
+  // key (btc-xpub normalizes to 'btc'); balanceRaw is the smallest-unit balance
+  // (sats / wei-equivalent / sun / drops / lamports). handleLookupAll collects
+  // these and hands them to renderPortfolio for aggregation.
+
   // ── Bitcoin ──
   if (chainKey === 'btc') {
     const d = await apiBtcAddress(input);
     renderBalance(d.balance, 'btc', card);
     renderStats(d.received, d.spent, d.txCount, 'btc', card);
     renderBtcTxs(d.txs, d.txAddr, 'btc', card);
-    return;
+    return { chainKey: 'btc', balanceRaw: d.balance };
   }
 
   if (chainKey === 'btc-xpub') {
@@ -738,7 +743,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, 'btc', card);
     renderStats(d.received, d.spent, d.txCount, 'btc', card);
     renderBtcTxs(d.txs, null, 'btc', card);
-    return;
+    return { chainKey: 'btc', balanceRaw: d.balance };
   }
 
   // ── EVM chains (ETH, BNB, MATIC, AVAX, ARB, OP) ──
@@ -747,7 +752,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balanceRaw, chainKey, card);
     renderStats(null, null, null, chainKey, card);
     renderEvmTxs(d.txs, input, chainKey, card);
-    return;
+    return { chainKey, balanceRaw: d.balanceRaw };
   }
 
   // ── Blockchair chains (LTC, DOGE, BCH, DASH) ──
@@ -756,7 +761,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, chainKey, card);
     renderStats(d.received, d.spent, d.txCount, chainKey, card);
     renderBlockchairTxs(d.txs, input, chainKey, card);
-    return;
+    return { chainKey, balanceRaw: d.balance };
   }
 
   // ── Tron ──
@@ -765,7 +770,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, 'trx', card);
     renderStats(null, null, d.txCount || null, 'trx', card);
     renderTrxTxs(d.txs, d.hexAddr, 'trx', card);
-    return;
+    return { chainKey: 'trx', balanceRaw: d.balance };
   }
 
   // ── XRP ──
@@ -774,7 +779,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, 'xrp', card);
     renderStats(null, null, null, 'xrp', card);
     renderXrpTxs(d.txs, input, 'xrp', card);
-    return;
+    return { chainKey: 'xrp', balanceRaw: d.balance };
   }
 
   // ── Solana ──
@@ -783,7 +788,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, 'sol', card);
     renderStats(null, null, null, 'sol', card);
     renderSolTxs(d.txs, 'sol', card);
-    return;
+    return { chainKey: 'sol', balanceRaw: d.balance };
   }
 
   throw new Error(`Chain ${chainKey} not implemented.`);
@@ -924,6 +929,111 @@ function makeWalletCard() {
   return card;
 }
 
+// ─── Portfolio summary ───────────────────────────────────────────────────────
+//
+// Aggregates wallet balances by CoinGecko id (so ETH on mainnet/Arbitrum/Optimism
+// — all cgId 'ethereum' — collapse into one slice). For each cgId group the
+// display name and color come from the first chain in CHAINS matching that
+// cgId; for 'ethereum' that's 'eth'.
+
+function renderPortfolio(walletResults) {
+  const el = document.getElementById('portfolio');
+  el.innerHTML = '';
+
+  if (!walletResults.length) {
+    el.classList.add('hidden');
+    return;
+  }
+
+  const byCgId = new Map();
+  for (const { chainKey, balanceRaw } of walletResults) {
+    const c = CHAINS[chainKey];
+    if (!c) continue;
+    const coinAmount = balanceRaw / Math.pow(10, c.decimals);
+    const p = priceFor(c.cgId);
+
+    let slice = byCgId.get(c.cgId);
+    if (!slice) {
+      const refChain = Object.values(CHAINS).find(x => x.cgId === c.cgId);
+      slice = {
+        cgId:       c.cgId,
+        name:       refChain.name,
+        color:      refChain.color,
+        coinAmount: 0,
+        fiatValue:  0,
+        hasPrice:   p !== null,
+      };
+      byCgId.set(c.cgId, slice);
+    }
+    slice.coinAmount += coinAmount;
+    if (slice.hasPrice) slice.fiatValue += coinAmount * p;
+  }
+
+  const slices       = [...byCgId.values()].sort((a, b) => b.fiatValue - a.fiatValue);
+  const pricedSlices = slices.filter(s => s.hasPrice && s.fiatValue > 0);
+  const total        = pricedSlices.reduce((sum, s) => sum + s.fiatValue, 0);
+
+  const { code, locale } = CURRENCIES[activeCurrency];
+  const fmtCurrency = v => new Intl.NumberFormat(locale, {
+    style: 'currency', currency: code,
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(v);
+
+  const totalHtml = pricedSlices.length
+    ? `<div class="portfolio-total">${fmtCurrency(total)}</div>`
+    : `<div class="portfolio-total muted">Prices unavailable</div>`;
+
+  let chartHtml = '';
+  if (pricedSlices.length === 1) {
+    // Single slice — render a full circle; SVG arc paths are undefined at 360°.
+    chartHtml = `<svg viewBox="0 0 100 100" class="portfolio-pie" aria-hidden="true">
+      <circle cx="50" cy="50" r="45" fill="${pricedSlices[0].color}"/>
+    </svg>`;
+  } else if (pricedSlices.length >= 2) {
+    chartHtml = buildPieSvg(pricedSlices, total);
+  }
+
+  const legendHtml = slices.map(s => {
+    const pctText = s.hasPrice && total > 0
+      ? ((s.fiatValue / total) * 100).toFixed(1) + '%'
+      : '—';
+    const valText = s.hasPrice ? fmtCurrency(s.fiatValue) : 'no price';
+    return `<div class="portfolio-row">
+      <span class="portfolio-swatch" style="background:${s.color}"></span>
+      <span class="portfolio-name">${s.name}</span>
+      <span class="portfolio-value">${valText}</span>
+      <span class="portfolio-pct">${pctText}</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="portfolio-header">Portfolio</div>
+    ${totalHtml}
+    <div class="portfolio-body">
+      ${chartHtml ? `<div class="portfolio-chart">${chartHtml}</div>` : ''}
+      <div class="portfolio-legend">${legendHtml}</div>
+    </div>
+  `;
+  el.classList.remove('hidden');
+}
+
+function buildPieSvg(slices, total) {
+  const cx = 50, cy = 50, r = 45;
+  let angle = -Math.PI / 2;   // start at 12 o'clock
+  const paths = slices.map(s => {
+    const frac = s.fiatValue / total;
+    const a2   = angle + frac * 2 * Math.PI;
+    const x1   = cx + r * Math.cos(angle);
+    const y1   = cy + r * Math.sin(angle);
+    const x2   = cx + r * Math.cos(a2);
+    const y2   = cy + r * Math.sin(a2);
+    const largeArc = frac > 0.5 ? 1 : 0;
+    angle = a2;
+    return `<path d="M ${cx},${cy} L ${x1.toFixed(3)},${y1.toFixed(3)} A ${r},${r} 0 ${largeArc} 1 ${x2.toFixed(3)},${y2.toFixed(3)} Z" fill="${s.color}"/>`;
+  });
+  return `<svg viewBox="0 0 100 100" class="portfolio-pie" aria-hidden="true">${paths.join('')}</svg>`;
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 async function handleLookupAll() {
@@ -932,14 +1042,25 @@ async function handleLookupAll() {
     .map(row => ({ row, input: row.querySelector('.wallet-input').value.trim() }))
     .filter(t => t.input);
 
-  if (tasks.length === 0) return;
+  const portfolio = document.getElementById('portfolio');
+
+  if (tasks.length === 0) {
+    portfolio.classList.add('hidden');
+    portfolio.innerHTML = '';
+    return;
+  }
 
   setLoading(true);
   setError('');
 
+  portfolio.classList.add('hidden');
+  portfolio.innerHTML = '';
+
   const results = document.getElementById('results');
   results.innerHTML = '';
   results.classList.remove('hidden');
+
+  const portfolioData = [];
 
   try {
     await fetchPrices();
@@ -951,12 +1072,15 @@ async function handleLookupAll() {
         const detected = detectChain(input);
         if (!detected) throw new Error('Address format not recognised.');
         const chainKey = detected === 'evm' ? (row.dataset.evmChain || 'eth') : detected;
-        await lookupChain(input, chainKey, card);
+        const result = await lookupChain(input, chainKey, card);
+        if (result) portfolioData.push(result);
       } catch (err) {
         const short = input.length > 50 ? input.slice(0, 24) + '…' + input.slice(-8) : input;
         card.innerHTML = `<div class="wallet-card-error"><strong>${short}</strong> — ${err.message || 'Lookup failed.'}</div>`;
       }
     }));
+
+    renderPortfolio(portfolioData);
   } catch (err) {
     setError(err.message || 'Something went wrong. Please try again.');
   } finally {

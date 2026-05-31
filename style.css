@@ -490,6 +490,92 @@ body {
   color: var(--accent);
 }
 
+/* ── Portfolio summary ── */
+.portfolio {
+  background: rgba(255,255,255,0.015);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.portfolio-header {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.4rem;
+}
+
+.portfolio-total {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 1.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.portfolio-total.muted {
+  color: var(--muted);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.portfolio-body {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.portfolio-chart {
+  flex-shrink: 0;
+  width: 160px;
+  height: 160px;
+}
+
+.portfolio-pie {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.portfolio-legend {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.portfolio-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.7rem;
+  align-items: center;
+  font-size: 0.88rem;
+}
+
+.portfolio-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.portfolio-name { color: var(--text); font-weight: 500; }
+.portfolio-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.portfolio-pct {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5rem;
+  text-align: right;
+}
+
 /* ── Footer ── */
 .footer {
   border-top: 1px solid var(--border);
@@ -513,4 +599,7 @@ body {
   .stats-row .stat-card:last-child { grid-column: span 2; }
   .balance-amount { font-size: 1.8rem; }
   .evm-selector   { flex-direction: column; align-items: flex-start; }
+  .portfolio-body { flex-direction: column; align-items: stretch; }
+  .portfolio-chart { width: 140px; height: 140px; align-self: center; }
+  .portfolio-total { font-size: 1.6rem; }
 }
