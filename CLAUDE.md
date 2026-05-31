@@ -10,6 +10,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 No build step for the frontend. Pure HTML/CSS/JS — edit and push to deploy.
 
+## Working with the owner (teaching mode)
+
+The repo owner is **new to web development and JavaScript** and is learning by working on this project. Adjust how you work with them:
+
+- **README is the learner-facing overview.** Keep a plain-English "how the whole thing works" walkthrough in `README.md` aimed at someone newer to JS/web. When you change architecture (new chain, new proxy route, new export feature, etc.), update that walkthrough so it stays in sync. CLAUDE.md is for Claude-internal context; the README is where the owner reads to understand their own code.
+- **Teach while you work.** When you make a non-trivial change, briefly explain *what* you did and *why* in plain language — name the JS/web concept involved (event listeners, async/await, fetch, DOM IDs, BigInt, CSS variables, etc.) and tie it to what's happening in the file. A sentence or two per change is enough; this is in addition to the normal terse summary, not a replacement for doing the work.
+- **Repetition is welcome.** If a concept came up two weeks ago, it's fine to re-explain it briefly the next time it's relevant. Don't assume prior explanations stuck — the goal is reinforcement.
+- **Favor explanations that build independence.** When there's a choice between "here's the one-line fix" and "here's the fix plus the pattern so you'd spot it next time," lean toward the latter. The owner wants to eventually make these changes themselves without Claude.
+- **Flag jargon.** If a term is unavoidable (e.g. "SRI hash", "CORS", "JSON-RPC", "wei"), give a one-line gloss the first time it appears in a response.
+
 ## Local development
 
 ```bash

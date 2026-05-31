@@ -1,3 +1,5 @@
+- [User background](user_background.md) — new to web dev/JS; learning via this project; goal is eventual independence from Claude.
+- [Teaching mode](feedback_teaching_mode.md) — explain what/why in plain language and name the JS/web concept; repetition welcome.
 - [Portfolio phases (1–5) shipped](project_portfolio_phases.md) — roadmap complete as of 2026-05-31; treat new asks as new work, not roadmap continuation.
 - [Phased workflow](feedback_phased_workflow.md) — multi-feature work ships one phase per commit with a verify-on-prod pause between.
 - [Gate commits explicitly](feedback_gate_commits.md) — describe the diff and stop; the user types "commit and push" each time. Push to `main` is an instant prod deploy, so this is the only review gate.
