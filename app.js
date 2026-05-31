@@ -474,6 +474,155 @@ async function apiSol(addr) {
   throw new Error(`Solana lookup failed. All RPC endpoints blocked. (${lastErr.message})`);
 }
 
+// ─── Tx normalization (for CSV export) ───────────────────────────────────────
+//
+// Flattens chain-specific raw tx shapes into uniform rows for CSV export.
+// Render functions compute direction/amount inline against the same source data;
+// keeping a second copy here avoids refactoring 6 render paths at once.
+// `opts.hexAddr` is required for TRX (TronGrid returns hex `41…` addresses).
+
+function normalizeTxs(chainKey, rawTxs, addr, opts = {}) {
+  const c = CHAINS[chainKey];
+  if (!c || !rawTxs?.length) return [];
+
+  const mkRow = (txHash, timestamp, direction, amountRaw, status) => ({
+    chain:       c.name,
+    symbol:      c.symbol,
+    address:     addr ?? '',
+    txHash:      txHash ?? '',
+    timestamp:   timestamp || null,
+    isoDate:     timestamp ? new Date(timestamp * 1000).toISOString() : '',
+    direction,                                                     // 'sent' | 'received' | 'self' | ''
+    amountCoin:  amountRaw !== null && amountRaw !== undefined
+                   ? Math.abs(amountRaw) / Math.pow(10, c.decimals)
+                   : null,
+    status,                                                        // 'confirmed' | 'pending' | 'failed'
+    explorerUrl: txHash ? c.explorer.tx + txHash : '',
+  });
+
+  // BTC (mempool.space format)
+  if (chainKey === 'btc') {
+    return rawTxs.map(tx => {
+      let received = 0, sent = 0;
+      if (addr) {
+        for (const o of tx.vout) if (o.scriptpubkey_address === addr) received += o.value;
+        for (const i of tx.vin)  if (i.prevout?.scriptpubkey_address === addr) sent += i.value;
+      }
+      const net = addr ? received - sent : null;
+      const dir = net === null ? '' : net > 0 ? 'received' : net < 0 ? 'sent' : 'self';
+      return mkRow(tx.txid, tx.status.block_time, dir, net,
+        tx.status.confirmed ? 'confirmed' : 'pending');
+    });
+  }
+
+  // EVM (already pre-normalized by apiEvmFull)
+  if (c.evmKey) {
+    const addrLower = addr.toLowerCase();
+    return rawTxs.map(tx => {
+      const isSend    = tx.fromAddr === addrLower;
+      const isReceive = tx.toAddr   === addrLower;
+      const dir = tx.isError ? '' : isSend && !isReceive ? 'sent'
+                  : isReceive && !isSend ? 'received' : 'self';
+      return mkRow(tx.hash, tx.timestamp, dir, tx.valueRaw,
+        tx.isError ? 'failed' : 'confirmed');
+    });
+  }
+
+  // Blockchair chains (LTC, DOGE, BCH, DASH)
+  if (c.blockchairKey) {
+    return rawTxs.map(({ hash, transaction: txData, inputs = [], outputs = [] }) => {
+      let received = 0, sent = 0;
+      for (const o of outputs) if (o.recipient === addr) received += o.value;
+      for (const i of inputs)  if (i.recipient === addr) sent     += i.value;
+      const net = received - sent;
+      const dir = net > 0 ? 'received' : net < 0 ? 'sent' : 'self';
+      const confirmed = (txData?.block_id ?? 0) > 0;
+      const ts = txData?.time
+        ? Math.floor(new Date(txData.time.replace(' ', 'T') + 'Z').getTime() / 1000)
+        : 0;
+      return mkRow(hash, ts, dir, net, confirmed ? 'confirmed' : 'pending');
+    });
+  }
+
+  // Tron (TronGrid) — direction needs hex `41…` address
+  if (chainKey === 'trx') {
+    const hexAddr = opts.hexAddr;
+    return rawTxs.map(tx => {
+      const contract  = tx.raw_data?.contract?.[0];
+      const val       = contract?.parameter?.value ?? {};
+      const amount    = val.amount ?? 0;
+      const ownerAddr = val.owner_address ?? '';
+      const toAddr    = val.to_address    ?? '';
+      const isSend    = hexAddr && ownerAddr === hexAddr;
+      const isReceive = hexAddr && toAddr    === hexAddr;
+      const status    = tx.ret?.[0]?.contractRet ?? 'UNKNOWN';
+      const ts        = tx.block_timestamp ? Math.floor(tx.block_timestamp / 1000) : 0;
+      const dir       = isSend && !isReceive ? 'sent'
+                        : isReceive && !isSend ? 'received' : 'self';
+      return mkRow(tx.txID, ts, dir, amount, status === 'SUCCESS' ? 'confirmed' : 'failed');
+    });
+  }
+
+  // XRP (XRPL)
+  if (chainKey === 'xrp') {
+    const XRPL_EPOCH = 946684800;
+    return rawTxs.map(entry => {
+      const tx     = entry.tx ?? entry;
+      const meta   = entry.meta;
+      const hash   = tx.hash ?? '';
+      const ts     = tx.date ? tx.date + XRPL_EPOCH : 0;
+      const isSend = tx.Account === addr;
+      const amount = typeof tx.Amount === 'string' ? Number(tx.Amount) : 0;   // drops; non-XRP issuances → 0
+      const ok     = meta?.TransactionResult === 'tesSUCCESS';
+      const dir    = isSend ? 'sent' : 'received';
+      return mkRow(hash, ts, dir, amount, ok ? 'confirmed' : 'failed');
+    });
+  }
+
+  // Solana (only first ~10 sigs have netLamports; rest stay null)
+  if (chainKey === 'sol') {
+    return rawTxs.map(tx => {
+      const net = tx.netLamports;
+      const dir = net === null ? '' : net > 0 ? 'received' : net < 0 ? 'sent' : 'self';
+      return mkRow(tx.signature, tx.blockTime, dir, net, tx.err ? 'failed' : 'confirmed');
+    });
+  }
+
+  return [];
+}
+
+// RFC 4180 CSV: quote fields containing comma/quote/newline; double internal quotes.
+function toCsv(rows) {
+  const headers = ['Chain', 'Symbol', 'Address', 'Tx Hash', 'Timestamp (ISO)',
+                   'Direction', 'Amount', 'Status', 'Explorer URL'];
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [headers.join(',')];
+  for (const r of rows) {
+    lines.push([
+      r.chain, r.symbol, r.address, r.txHash, r.isoDate, r.direction,
+      r.amountCoin !== null ? r.amountCoin : '',
+      r.status, r.explorerUrl,
+    ].map(esc).join(','));
+  }
+  return lines.join('\r\n');
+}
+
+function downloadCsv(rows) {
+  const blob = new Blob([toCsv(rows)], { type: 'text/csv;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `kiwipit-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ─── Rendering ────────────────────────────────────────────────────────────────
 //
 // All render* functions take a `card` element (the .wallet-card root for one
@@ -724,10 +873,11 @@ async function lookupChain(rawInput, chainKey, card) {
   paintCardAccent(chainKey, card);
   renderChainHeader(chainKey, input, card);
 
-  // Each branch returns { chainKey, balanceRaw } — chainKey is a valid CHAINS
-  // key (btc-xpub normalizes to 'btc'); balanceRaw is the smallest-unit balance
-  // (sats / wei-equivalent / sun / drops / lamports). handleLookupAll collects
-  // these and hands them to renderPortfolio for aggregation.
+  // Each branch returns { chainKey, balanceRaw, txRows } — chainKey is a valid
+  // CHAINS key (btc-xpub normalizes to 'btc'); balanceRaw is the smallest-unit
+  // balance (sats / wei-equivalent / sun / drops / lamports); txRows is the flat
+  // CSV-shaped tx list. handleLookupAll collects these and hands balances to
+  // renderPortfolio and txRows to the CSV exporter.
 
   // ── Bitcoin ──
   if (chainKey === 'btc') {
@@ -735,7 +885,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, 'btc', card);
     renderStats(d.received, d.spent, d.txCount, 'btc', card);
     renderBtcTxs(d.txs, d.txAddr, 'btc', card);
-    return { chainKey: 'btc', balanceRaw: d.balance };
+    return { chainKey: 'btc', balanceRaw: d.balance, txRows: normalizeTxs('btc', d.txs, input) };
   }
 
   if (chainKey === 'btc-xpub') {
@@ -743,7 +893,8 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, 'btc', card);
     renderStats(d.received, d.spent, d.txCount, 'btc', card);
     renderBtcTxs(d.txs, null, 'btc', card);
-    return { chainKey: 'btc', balanceRaw: d.balance };
+    // xpub: per-address direction is unknowable without deriving each output script, so passes null addr → blank direction/amount in CSV
+    return { chainKey: 'btc', balanceRaw: d.balance, txRows: normalizeTxs('btc', d.txs, input) };
   }
 
   // ── EVM chains (ETH, BNB, MATIC, AVAX, ARB, OP) ──
@@ -752,7 +903,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balanceRaw, chainKey, card);
     renderStats(null, null, null, chainKey, card);
     renderEvmTxs(d.txs, input, chainKey, card);
-    return { chainKey, balanceRaw: d.balanceRaw };
+    return { chainKey, balanceRaw: d.balanceRaw, txRows: normalizeTxs(chainKey, d.txs, input) };
   }
 
   // ── Blockchair chains (LTC, DOGE, BCH, DASH) ──
@@ -761,7 +912,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, chainKey, card);
     renderStats(d.received, d.spent, d.txCount, chainKey, card);
     renderBlockchairTxs(d.txs, input, chainKey, card);
-    return { chainKey, balanceRaw: d.balance };
+    return { chainKey, balanceRaw: d.balance, txRows: normalizeTxs(chainKey, d.txs, input) };
   }
 
   // ── Tron ──
@@ -770,7 +921,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, 'trx', card);
     renderStats(null, null, d.txCount || null, 'trx', card);
     renderTrxTxs(d.txs, d.hexAddr, 'trx', card);
-    return { chainKey: 'trx', balanceRaw: d.balance };
+    return { chainKey: 'trx', balanceRaw: d.balance, txRows: normalizeTxs('trx', d.txs, input, { hexAddr: d.hexAddr }) };
   }
 
   // ── XRP ──
@@ -779,7 +930,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, 'xrp', card);
     renderStats(null, null, null, 'xrp', card);
     renderXrpTxs(d.txs, input, 'xrp', card);
-    return { chainKey: 'xrp', balanceRaw: d.balance };
+    return { chainKey: 'xrp', balanceRaw: d.balance, txRows: normalizeTxs('xrp', d.txs, input) };
   }
 
   // ── Solana ──
@@ -788,7 +939,7 @@ async function lookupChain(rawInput, chainKey, card) {
     renderBalance(d.balance, 'sol', card);
     renderStats(null, null, null, 'sol', card);
     renderSolTxs(d.txs, 'sol', card);
-    return { chainKey: 'sol', balanceRaw: d.balance };
+    return { chainKey: 'sol', balanceRaw: d.balance, txRows: normalizeTxs('sol', d.txs, input) };
   }
 
   throw new Error(`Chain ${chainKey} not implemented.`);
@@ -936,7 +1087,7 @@ function makeWalletCard() {
 // display name and color come from the first chain in CHAINS matching that
 // cgId; for 'ethereum' that's 'eth'.
 
-function renderPortfolio(walletResults) {
+function renderPortfolio(walletResults, exportRows = []) {
   const el = document.getElementById('portfolio');
   el.innerHTML = '';
 
@@ -1006,8 +1157,15 @@ function renderPortfolio(walletResults) {
     </div>`;
   }).join('');
 
+  const exportBtnHtml = exportRows.length
+    ? `<button type="button" class="export-csv-btn" id="exportCsvBtn">Export CSV ↓</button>`
+    : '';
+
   el.innerHTML = `
-    <div class="portfolio-header">Portfolio</div>
+    <div class="portfolio-header-row">
+      <div class="portfolio-header">Portfolio</div>
+      ${exportBtnHtml}
+    </div>
     ${totalHtml}
     <div class="portfolio-body">
       ${chartHtml ? `<div class="portfolio-chart">${chartHtml}</div>` : ''}
@@ -1015,6 +1173,10 @@ function renderPortfolio(walletResults) {
     </div>
   `;
   el.classList.remove('hidden');
+
+  if (exportRows.length) {
+    document.getElementById('exportCsvBtn').addEventListener('click', () => downloadCsv(exportRows));
+  }
 }
 
 function buildPieSvg(slices, total) {
@@ -1061,6 +1223,7 @@ async function handleLookupAll() {
   results.classList.remove('hidden');
 
   const portfolioData = [];
+  const allTxRows     = [];
 
   try {
     await fetchPrices();
@@ -1073,14 +1236,18 @@ async function handleLookupAll() {
         if (!detected) throw new Error('Address format not recognised.');
         const chainKey = detected === 'evm' ? (row.dataset.evmChain || 'eth') : detected;
         const result = await lookupChain(input, chainKey, card);
-        if (result) portfolioData.push(result);
+        if (result) {
+          portfolioData.push(result);
+          if (result.txRows?.length) allTxRows.push(...result.txRows);
+        }
       } catch (err) {
         const short = input.length > 50 ? input.slice(0, 24) + '…' + input.slice(-8) : input;
         card.innerHTML = `<div class="wallet-card-error"><strong>${short}</strong> — ${err.message || 'Lookup failed.'}</div>`;
       }
     }));
 
-    renderPortfolio(portfolioData);
+    allTxRows.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    renderPortfolio(portfolioData, allTxRows);
   } catch (err) {
     setError(err.message || 'Something went wrong. Please try again.');
   } finally {

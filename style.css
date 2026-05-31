@@ -499,14 +499,35 @@ body {
   margin-bottom: 1.5rem;
 }
 
+.portfolio-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.4rem;
+  gap: 1rem;
+}
+
 .portfolio-header {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  margin-bottom: 0.4rem;
 }
+
+.export-csv-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.4rem 0.8rem;
+  transition: color 0.15s, border-color 0.15s;
+}
+.export-csv-btn:hover  { color: var(--accent); border-color: var(--accent); }
+.export-csv-btn:active { opacity: 0.7; }
 
 .portfolio-total {
   font-size: 2rem;
