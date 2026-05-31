@@ -93,3 +93,40 @@ Cloudflare Workers auto-deploys on every push to `main` (Workers Builds connecte
 ## Git push auth
 
 The `origin` remote uses HTTPS and the user's PAT is stored via `git config --global credential.helper store` at `~/.git-credentials`. **Push directly with `git push origin main` — do not prompt the user for credentials.** If a push ever fails with an auth error, tell the user the stored token may have expired or been revoked; don't try to work around it.
+
+## Planned work (portfolio expansion)
+
+This is an in-progress 5-phase feature set adding multi-wallet portfolio support. Each phase ships as one commit pushed to `main` for the user to verify on `kiwipit.com` before continuing. Workflow: implement → commit → push → wait for user approval ("go" / "approved") before starting the next phase.
+
+**Done:**
+- **Phase 1** ✅ (commit `9a3a009`) — Currency switcher USD/EUR/BRL in header. `fetchPrices` fetches all three from CoinGecko in one call. `fmtFiat(raw, decimals, cgId)` reads `activeCurrency`. Selection persists in `localStorage` under `kp.currency`. Switching currency re-runs `handleLookupAll`.
+- **Phase 2** ✅ (commit `f938e11`) — Multi-wallet inputs: dynamic list of `.wallet-row` elements, "+ Add wallet" / "Look up all" controls. Per-row state on `row.dataset.evmChain`. `lookupChain(input, chainKey, card)` and all `render*(... , card)` functions are now card-scoped via `card.querySelector(...)`. `handleLookupAll` runs lookups in parallel via `Promise.all`; per-card error rendering on failure (does not break siblings). Each card sets its own `--accent` via `paintCardAccent`.
+
+**Remaining:**
+
+### Phase 3 — Portfolio summary + pie chart
+Add a `#portfolio` block above `#results` showing the aggregated total and a per-chain breakdown.
+- **Aggregation key**: group by `c.cgId`, not by `chainKey`. ETH on Ethereum + Arbitrum + Optimism (all `cgId: 'ethereum'`) should collapse into one "Ethereum" slice. For the display name/color, use the first chain in `CHAINS` matching that `cgId`.
+- **Data flow**: refactor each branch in `lookupChain` to `return { chainKey, balanceRaw }` (raw smallest-unit balance: sats / wei-scaled / sun / drops / lamports). `handleLookupAll` collects results from `Promise.all` (filter out failures), passes to `renderPortfolio(results)`.
+- **Pie chart**: inline SVG, no library. For each slice compute `M cx,cy L x1,y1 A r,r 0 largeArc 1 x2,y2 Z`. Special-case `nonZero.length === 1` → render full `<circle>` instead (path arc is undefined at 360°). Skip zero-value slices. Start at 12 o'clock (`-Math.PI/2`).
+- **Layout**: pie on the left, legend on the right. Each legend row: color swatch + chain name + fiat value (via `fmtFiat`) + percentage (1 decimal). Show total at top using current `activeCurrency`.
+- **Edge cases**: if prices unavailable for all chains → hide pie, show "Prices unavailable". If only one chain → show total without the pie. If a single wallet → still render the summary.
+- **Currency switch**: portfolio re-renders automatically because the currency button re-runs `handleLookupAll`.
+
+### Phase 4 — CSV export
+- Add a "Download CSV" button in the portfolio header area (visible only when results exist).
+- One CSV row per transaction across all wallets. Columns: `wallet_address, chain, date, direction, amount, amount_symbol, fiat_value, fiat_currency, tx_hash, explorer_url`.
+- The render functions currently compute net/direction per chain (BTC inputs/outputs scan, EVM from/to compare, TRX hex-addr compare, etc.). Either (a) extract that normalization into a `normalizeTxs(rawTxs, chainKey, addr) → [{date, direction, amount, hash}]` helper and call it from both render and export, or (b) attach the normalized list to the card via a closure / dataset.
+- Quote CSV fields containing commas/quotes per RFC 4180. Use BOM `﻿` prefix so Excel opens UTF-8 correctly.
+- Filename: `kiwipit-portfolio-{YYYY-MM-DD}.csv`.
+
+### Phase 5 — PDF export
+- "Download PDF" button alongside CSV. Use `jsPDF` + `html2canvas` via CDN `<script>` tags (keeps no-build-step constraint). Pin versions: `jspdf@2.5.x`, `html2canvas@1.4.x`. Add `defer` attribute.
+- Strategy: `html2canvas` snapshots the `#portfolio` + `#results` area at 2x scale → image → `jsPDF` with A4 page splitting (if the canvas height exceeds one page, slice and add multiple pages).
+- Filename: `kiwipit-portfolio-{YYYY-MM-DD}.pdf`.
+- The dark background may render poorly in PDF — consider a temporary `.pdf-export` class on `<body>` that swaps to a light background during capture, then removes it.
+
+### Cross-cutting notes
+- **No npm/build step**: everything via CDN or inline. Library URLs go in `index.html` `<script>` tags, not `app.js`.
+- **CSP / `_headers`**: if `_headers` adds a Content-Security-Policy that blocks CDN scripts, relax it for `cdnjs.cloudflare.com` (or whichever CDN is chosen). Currently `_headers` has no CSP directive — safe to add CDN scripts as-is.
+- **Worker proxy unchanged**: none of these phases require new dynamic routes; `worker.js` stays as-is.
