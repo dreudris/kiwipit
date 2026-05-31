@@ -1,0 +1,67 @@
+{
+  "btc_legacy": {
+    "address": "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+    "detectChainResult": "btc",
+    "description": "Bitcoin genesis address (Satoshi) — 50 BTC, never spent, immortal"
+  },
+  "btc_bech32": {
+    "address": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+    "detectChainResult": "btc",
+    "description": "Bitcoin bech32 (segwit) format"
+  },
+  "btc_xpub": {
+    "address": "xpub6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egpiMZbpiaQL2jkwSB1icqYh2cfDfVxdx4df189oLKnC5fSwqPfgyP3hooxujYzAu3fDVmz",
+    "detectChainResult": "btc-xpub",
+    "description": "Bitcoin xpub (extended public key) — derives child addresses"
+  },
+  "eth": {
+    "address": "0xd8dA6BF26964aF9D7eeD9e03E53415D37aA96045",
+    "detectChainResult": "evm",
+    "description": "vitalik.eth — Ethereum, always active"
+  },
+  "bnb": {
+    "address": "0xF977814e90dA44bFA03b6295A0616a897441aceC",
+    "detectChainResult": "evm",
+    "description": "Binance cold #8 — same EVM format as ETH; chain disambiguated by tab"
+  },
+  "ltc_legacy": {
+    "address": "LZHkPzKVS1vNRHqwxFXqsumMtBR2t6yvF7",
+    "detectChainResult": "ltc",
+    "description": "Litecoin legacy format (L-prefix)"
+  },
+  "ltc_bech32": {
+    "address": "ltc1qd6lj4ky0lxgvthqs59x4dvz4ufzwdvnskhmlxr",
+    "detectChainResult": "ltc",
+    "description": "Litecoin bech32 format"
+  },
+  "doge": {
+    "address": "DH5yaieqoZN36fDVciNyRueRGvGLR3mr7L",
+    "detectChainResult": "doge",
+    "description": "Dogecoin"
+  },
+  "bch": {
+    "address": "qrcfanee0qg26jl0xs0n74cczalxw57t6gn6e5yp8x",
+    "detectChainResult": "bch",
+    "description": "Bitcoin Cash cashaddr (no bitcoincash: prefix)"
+  },
+  "dash": {
+    "address": "XwzfDArhAMdVeohEzhxJUw7QznFY7vUbcw",
+    "detectChainResult": "dash",
+    "description": "Dash"
+  },
+  "trx": {
+    "address": "TJRabPrwbZy45sbavfcjinPJC18kjpRTv8",
+    "detectChainResult": "trx",
+    "description": "Tron — base58, same shape as Solana but T-prefix wins because TRX is tested first"
+  },
+  "xrp": {
+    "address": "rEb8TK3gBgk5auZkwc6sHnwrGVJH8DuaLh",
+    "detectChainResult": "xrp",
+    "description": "XRP — r-prefix tested before generic Solana base58"
+  },
+  "sol": {
+    "address": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+    "detectChainResult": "sol",
+    "description": "Solana — bare base58, must be tested LAST in detectChain or it would shadow others"
+  }
+}
