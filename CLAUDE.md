@@ -22,11 +22,29 @@ The repo owner is **new to web development and JavaScript** and is learning by w
 
 ## Local development
 
+**Run dev tools in Docker, not on the host.** The owner prefers to keep their Linux clean: don't install Node, wrangler, Python, linters, or any other language tool directly via `apt`, `npm -g`, `pip`, `npx`, or similar. Use a throwaway container instead. `git` and `curl` on the host are fine (they're already standard system tools and don't pollute anything).
+
+The canonical local-dev command is therefore:
+
 ```bash
-npx wrangler dev   # serves the site at localhost:8787 via wrangler.jsonc
+docker run --rm -it \
+  -v "$(pwd):/app" -w /app \
+  -p 8787:8787 \
+  node:lts \
+  npx wrangler dev --ip 0.0.0.0
 ```
 
-No install needed beyond wrangler. Alternatively, any static file server works (`python3 -m http.server`) — but a plain static server won't run `worker.js`, so the `/api/solana` and `/api/evm/{chainId}` proxy routes will 404. Use `wrangler dev` to exercise those.
+Explanation of the flags (for the learner):
+- `--rm` — delete the container as soon as it exits, so nothing accumulates
+- `-it` — interactive terminal (so Ctrl-C reaches wrangler)
+- `-v "$(pwd):/app" -w /app` — mount the current repo into the container at `/app` and make it the working directory; file edits on the host are visible immediately inside the container
+- `-p 8787:8787` — forward container port 8787 to host port 8787, so `http://localhost:8787` on the host reaches wrangler inside the container
+- `node:lts` — official Node.js long-term-support image; pulled the first time, cached locally afterwards
+- `npx wrangler dev --ip 0.0.0.0` — `--ip 0.0.0.0` is required because wrangler's default of `127.0.0.1` would only be reachable from inside the container; binding to all interfaces makes the host port-forward work
+
+Bare-metal `npx wrangler dev` is documented for reference but should not be the default. If a future tool (linter, test runner, codegen) needs to be added, propose a Docker-based recipe first; only fall back to a host install if the user explicitly opts in for that tool.
+
+Smoke-test the proxies from the host while the container runs — `curl` is a host-side tool so no container needed. Same payloads as the production smoke tests in the Deployment section, just against `http://localhost:8787`:
 
 Smoke-test the proxies locally once `wrangler dev` is up — same payloads as the production smoke tests in the Deployment section, just against `http://localhost:8787`:
 
