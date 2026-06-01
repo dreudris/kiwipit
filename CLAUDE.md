@@ -198,3 +198,51 @@ All five planned phases shipped (currency switcher, multi-wallet inputs, portfol
 - **`downloadPdf(btn)`** — captures `#portfolio` and each `.wallet-card` separately with html2canvas, stacks the canvases into an A4 PDF via jsPDF with auto-pagination. Per-element capture (vs. one parent capture) gives clean page breaks.
 
 The PDF libs (`html2canvas` 1.4.1 + `jsPDF` 2.5.1) load from cdnjs with SRI hashes pinned in `index.html`. If you bump versions, regenerate the SRI hashes — the browser will refuse to execute the script otherwise (silent failure: `window.html2canvas` / `window.jspdf` undefined, `downloadPdf` shows an alert).
+
+## Stocks / ETF holdings (planned, not yet shipped)
+
+User wants to track stocks and ETFs alongside the crypto wallets, identified by **ISIN** and a user-entered quantity. As of 2026-06-01 the spec below is agreed but **no code has shipped** — pick this section up when the user says "let's start Phase 1" (or similar) and resume from there.
+
+### Decisions already made (don't relitigate without asking)
+
+- **Identifier is ISIN, not ticker.** ISIN is globally unique; tickers are exchange-scoped (e.g. Roche has different tickers in Zurich vs. OTC). User explicitly asked for ISIN input.
+- **Price source: Yahoo Finance** (unofficial endpoints, no signup, no key). Accepted tradeoff: Yahoo restructures its internal API every 6–18 months and the route will break silently until patched. Options weighed and rejected: Finnhub (needs user signup + key the user didn't want to manage), Alpha Vantage (5 req/min cap too tight), manual price entry (rejected as too painful for a portfolio tool).
+- **Worker proxy is mandatory.** Yahoo doesn't set CORS headers, so direct browser fetches fail. All Yahoo traffic goes through a new `/api/stock` route in `worker.js` — same pattern as `/api/solana` and `/api/evm/`. Consistent with the [[project-ios-webkit-proxy]] memory: default new third-party fetches behind a worker proxy.
+- **Holdings persist via `localStorage`** (same model as the wallet list — check the existing wallet code for the exact key/shape convention). No account system; the user shelved that decision earlier this session.
+- **Fiat↔fiat FX in Phase 3 via `exchangerate.host`** (free, no key). Needed so a USD-priced stock can show its EUR-equivalent value when portfolio currency is EUR.
+
+### Yahoo endpoints to call (in `worker.js`)
+
+1. **ISIN → symbol:** `GET https://query1.finance.yahoo.com/v1/finance/search?q={isin}`. Response shape: `{ quotes: [{ symbol, longname, exchange, ... }, ...] }`. Take `quotes[0]`. Empty array → return clean "not found" to the browser.
+2. **Symbol → price:** `GET https://query1.finance.yahoo.com/v8/finance/chart/{symbol}`. Response shape: `{ chart: { result: [{ meta: { regularMarketPrice, currency, longName, ... } }] } }`. Read `meta.regularMarketPrice` + `meta.currency`.
+
+**Do NOT use `/v7/finance/quote`** — it requires a `crumb` + cookie auth flow that's painful to replicate from a Worker. The `/v8/finance/chart/` endpoint is the stable choice today.
+
+### Phase 1 — `/api/stock` proxy (backend only, no UI)
+
+- Add `/api/stock?isin={isin}` to `worker.js`. Chain search → chart server-side.
+- Return `{ symbol, name, price, currency }` on success; `{ error: "not found" }` when Yahoo's search returns an empty `quotes` array; `{ error: "yahoo error: …" }` when an upstream fetch fails.
+- Add a curl smoke test alongside the existing Solana/EVM ones in both the Local development section and the Deployment section. Known-good ISIN to use: `US0378331005` (Apple).
+- No frontend changes in this phase. The goal is to confirm the ISIN→price round-trip works on prod before touching `app.js` / `index.html`.
+
+### Phase 2 — Holdings input + per-holding cards (frontend)
+
+- Extend `index.html` with an "Add holding" section: rows of (ISIN input, quantity input, delete button) and a "+ Add holding" button — mirror the existing wallet-list pattern in the same `.search-box` container.
+- Persist the holdings array in `localStorage` under a `pitfolio.holdings` key (or match whatever key the wallet list uses; check first).
+- On "Look up all", call `/api/stock` once per holding **in parallel** (Promise.all), same way `lookupChain` is called for each wallet.
+- Render one card per holding: symbol, name, quantity, price, value. Visually consistent with `.wallet-card` — consider reusing the class so styling stays in sync.
+- No pie-chart integration in this phase. Holdings just appear as standalone cards.
+
+### Phase 3 — Portfolio aggregation + FX + exports
+
+- Include holdings in `renderPortfolio()` pie slices. **Open question:** aggregation key — by `symbol`, by ISIN, or by `name`? Two listings of the same security at different ISINs are rare but real; ask the user when starting Phase 3.
+- Add fiat↔fiat conversion via `exchangerate.host` so stock values display in the active portfolio currency (USD/EUR/BRL). Fetch the rates table once at lookup time, cache for the page load.
+- Update CSV export: holdings have no transactions, so emit one snapshot row per holding (ISIN, symbol, quantity, price, currency, value-in-portfolio-currency, timestamp).
+- Update PDF export: include each holding card in the `html2canvas` capture set, same way wallet cards are captured today.
+- Update tagline in `index.html` (currently "Multi-Chain Crypto Wallet Viewer") and the title in `<head>` to reflect that the app is no longer crypto-only. Suggested: "Crypto + Stocks Portfolio" — confirm with user.
+
+### Caveats to flag to the user before Phase 1
+
+- **ISIN coverage gaps.** Yahoo's database is incomplete for small European ETFs and very fresh listings. Some valid ISINs will return "not found" — surface that as a clean error on the holding row, not a silent failure.
+- **Multi-exchange ambiguity.** A single ISIN can map to multiple Yahoo symbols (ADR vs. primary listing). Phase 1 takes `quotes[0]`. If the user notices wrong-currency hits in Phase 2, add a per-holding "exchange override" field.
+- **Yahoo breakage risk.** The `/api/stock` route is the one piece of Pitfolio that can silently stop working through no fault of ours. Open question whether to add a worker-side health endpoint or just rely on the user noticing — settle this if/when it actually breaks.
