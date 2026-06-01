@@ -145,6 +145,8 @@ All APIs are free, no API key required. CoinGecko provides USD prices for all ch
 
 Cloudflare Workers auto-deploys on every push to `main` (Workers Builds connected to the repo). The Worker is named `dreudris` (see `wrangler.jsonc`) and its custom domain `dreudris.com` is managed in the Cloudflare dashboard.
 
+> **Renaming the Worker requires dashboard work, not just a config edit.** Workers Builds is bound to a specific Worker by its dashboard connection — editing `name:` in `wrangler.jsonc` alone has no effect; the deploy keeps landing on the original Worker. To actually rename: in the dashboard, disconnect Workers Builds from the existing Worker (Settings → Builds), then **Workers & Pages → Create → Connect to Git** with the new name, which provisions a fresh Worker. Move custom domains (e.g. `dreudris.com`) separately via Settings → Domains & Routes — they don't follow the rename. Delete the old Worker once verified.
+
 After deploy, smoke-test both proxies:
 
 ```bash
