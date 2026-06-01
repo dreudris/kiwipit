@@ -44,6 +44,14 @@ Explanation of the flags (for the learner):
 
 Bare-metal `npx wrangler dev` is documented for reference but should not be the default. If a future tool (linter, test runner, codegen) needs to be added, propose a Docker-based recipe first; only fall back to a host install if the user explicitly opts in for that tool.
 
+**Unit tests** (currently just `chains.js` detection) run under the same Docker pattern — no port forward needed, no wrangler:
+
+```bash
+docker run --rm -v "$(pwd):/app" -w /app node:lts npm test
+```
+
+`npm test` runs `node --test 'test/**/*.test.mjs'` (Node's built-in test runner — no Jest/Vitest dependency). Add new chains to `test/fixtures/addresses.json` and the parametrized test in `test/detect-chain.test.mjs` will pick them up automatically.
+
 Smoke-test the proxies from the host while the container runs — `curl` is a host-side tool so no container needed. Same payloads as the production smoke tests in the Deployment section, just against `http://localhost:8787`:
 
 Smoke-test the proxies locally once `wrangler dev` is up — same payloads as the production smoke tests in the Deployment section, just against `http://localhost:8787`:
@@ -63,42 +71,45 @@ Quick file map (each file's role at a glance — details in the bullets below):
 | File | Role |
 |------|------|
 | `index.html` | SPA shell; DOM IDs consumed by `app.js`; pinned-SRI `<script>` tags for html2canvas + jsPDF |
-| `app.js` | All chain logic — `CHAINS` registry, `detectChain`, `lookupChain`, `api*` fetchers, `render*` writers, portfolio + CSV/PDF export |
+| `chains.js` | Pure data + pure logic: `CHAINS` registry + `detectChain()`. ES module, no DOM/fetch — imported by both `app.js` (browser) and `test/*.test.mjs` (Node). |
+| `app.js` | Browser-only chain logic: `lookupChain`, `api*` fetchers, `render*` writers, portfolio + CSV/PDF export. Imports `CHAINS` / `detectChain` from `chains.js`. |
 | `style.css` | Dark-theme styles; `--accent` swapped per chain |
 | `worker.js` | Worker entry; `/api/solana` + `/api/evm/{chainId}` proxies, else `ASSETS` binding |
 | `wrangler.jsonc` | Workers config: `main: worker.js`, `assets.directory: "."`, `assets.binding: ASSETS` |
 | `_headers` | Static security headers (Pages-style glob, still honored by Static Assets) |
+| `package.json` | `type: module` + `npm test` runs `node --test 'test/**/*.test.mjs'`. No runtime deps. |
+| `test/` | Node `node:test` unit tests against `chains.js`; address fixtures in `test/fixtures/addresses.json`. |
 | `.claude/memory/` | Auto-memory for Claude Code, symlinked from `~/.claude/projects/...` |
 
 
 - `index.html` — single-page app shell; all DOM element IDs referenced by `app.js`
 - `style.css` — dark-theme styles; `--accent` CSS variable overridden per chain via JS
-- `app.js` — all chain logic: registry, detection, API fetchers, rendering, event wiring
+- `chains.js` — pure ES module holding the `CHAINS` registry and `detectChain()`. No browser globals so the file is importable by Node tests. **Always edit chain metadata or detection regexes here, not in `app.js`.**
+- `app.js` — browser-only logic: API fetchers, rendering, event wiring. Imports from `./chains.js`.
 - `worker.js` — Worker entry (`main`): routes `/api/solana` to the RPC proxy and `/api/evm/{chainId}` to the Routescan proxy, delegates everything else to the `ASSETS` binding (static files)
 - `_headers` — security headers. Uses Cloudflare Pages-style `/*` path-glob syntax (pre-dates the Workers migration). It still works under Workers Static Assets today, but if you add a Content-Security-Policy or other path-scoped rules, test that the glob actually matches in this deployment mode.
 - `wrangler.jsonc` — Cloudflare Workers config; `main: worker.js`, `assets.directory: "."`, `assets.binding: ASSETS`
+- `package.json` — declares `type: module` (so `app.js` can `import` from `chains.js` over `file://` and so `.mjs` tests can re-import it under Node) and the `test` script. Intentionally has no dependencies — the frontend stays buildless.
 
 > **Deployment is Cloudflare Workers Static Assets, not Pages.** The Pages-only `functions/` directory convention does NOT work here — dynamic routes must live in `worker.js` behind the `ASSETS` binding.
 
 > **`assets.directory: "."` ships the entire repo root as static files.** Anything you drop in the root is publicly served at `https://dreudris.com/<name>`. There is no build step or `dist/` filter — `CLAUDE.md`, `README.md`, and `wrangler.jsonc` happen to be harmless, but never put secrets, large binaries, or scratch files in the root. New tooling output belongs in a gitignored subdirectory (or a sibling repo), not at the root.
 
-## Code flow in `app.js`
+## Code flow
 
 ```
-CHAINS registry + EVM_RPCS
+chains.js: CHAINS registry + detectChain(input)
+   ↓ (imported by app.js)
+app.js: EVM_RPCS, handleLookup()       — debounced 150 ms on keystroke; fetches prices, resolves EVM tab
    ↓
-detectChain(input)          — regex per address format, 150 ms debounced on keystroke
+lookupChain(input, chainKey)            — dispatches to the right API fetcher, then renders
    ↓
-handleLookup()              — fetches prices, resolves EVM tab, calls lookupChain()
+api*() fetchers                         — one per API family (BTC, EVM RPC, Blockchair, TRX, XRP, SOL)
    ↓
-lookupChain(input, chainKey)— dispatches to the right API fetcher, then renders
-   ↓
-api*() fetchers             — one per API family (BTC, EVM RPC, Blockchair, TRX, XRP, SOL)
-   ↓
-render*() functions         — write directly into DOM elements by ID
+render*() functions                     — write directly into DOM elements by ID
 ```
 
-`lookupChain` is the integration point: it decides which fetcher to call based on `chainKey` (or `c.evmKey` / `c.blockchairKey` presence), then calls the matching `render*` functions.
+`lookupChain` (in `app.js`) is the integration point: it decides which fetcher to call based on `chainKey` (or `c.evmKey` / `c.blockchairKey` presence), then calls the matching `render*` functions. `chains.js` deliberately has no DOM or `fetch` references so the same module loads cleanly under Node for tests.
 
 ## Supported chains
 
@@ -123,12 +134,13 @@ All APIs are free, no API key required. CoinGecko provides USD prices for all ch
 
 ## Adding a new chain
 
-1. Add an entry to `CHAINS` with `name`, `symbol`, `color`, `icon`, `decimals`, `cgId`, `explorer`.
-2. Add a regex branch in `detectChain()` — order matters; Solana's broad base58 pattern must stay last.
-3. Write an `api*()` fetcher function.
-4. Add a branch in `lookupChain()` calling the fetcher and the appropriate `render*()` function.
+1. In **`chains.js`**: add an entry to `CHAINS` with `name`, `symbol`, `color`, `icon`, `decimals`, `cgId`, `explorer`.
+2. In **`chains.js`**: add a regex branch in `detectChain()` — order matters; Solana's broad base58 pattern must stay last.
+3. In **`test/fixtures/addresses.json`**: add a known good address for the new chain and run `npm test` (see Local development for the Docker recipe) to lock in the detection.
+4. In **`app.js`**: write an `api*()` fetcher function.
+5. In **`app.js`**: add a branch in `lookupChain()` calling the fetcher and the appropriate `render*()` function.
    - If it fits an existing API family (EVM RPC → add `evmKey`; Blockchair → add `blockchairKey`), no new fetcher needed.
-5. Update the hint text in `index.html` and the footer attribution if using a new data source.
+6. Update the hint text in `index.html` and the footer attribution if using a new data source.
 
 ## Key design decisions
 
