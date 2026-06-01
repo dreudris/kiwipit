@@ -7,7 +7,7 @@ metadata:
 
 Do not install language tools (Node, Python, wrangler, linters, test runners, etc.) directly on the host Linux via `apt`, `npm -g`, `pip`, `npx`, or similar. Use a throwaway Docker container instead.
 
-The canonical KiwiPit dev command is:
+The canonical Pitfolio dev command is:
 
 ```bash
 docker run --rm -it -v "$(pwd):/app" -w /app -p 8787:8787 node:lts \

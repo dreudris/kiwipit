@@ -503,7 +503,7 @@ function downloadCsv(rows) {
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `kiwipit-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `pitfolio-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -568,7 +568,7 @@ async function downloadPdf(btn) {
       firstOnPage = false;
     }
 
-    pdf.save(`kiwipit-portfolio-${new Date().toISOString().slice(0, 10)}.pdf`);
+    pdf.save(`pitfolio-portfolio-${new Date().toISOString().slice(0, 10)}.pdf`);
   } catch (err) {
     alert('PDF export failed: ' + (err.message || err));
   } finally {

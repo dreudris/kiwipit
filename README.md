@@ -1,4 +1,4 @@
-# 🥝 KiwiPit
+# 🥝 Pitfolio
 
 **Live at [dreudris.com](https://dreudris.com)** — a multi-chain crypto wallet viewer.
 

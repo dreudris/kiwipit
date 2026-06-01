@@ -1,13 +1,13 @@
 ---
 name: project-portfolio-phases
-description: KiwiPit portfolio expansion — all 5 phases shipped as of 2026-05-31
+description: Pitfolio portfolio expansion — all 5 phases shipped as of 2026-05-31
 metadata: 
   node_type: memory
   type: project
   originSessionId: 4b0f6fda-73f7-4fb9-a04c-e72f901d178d
 ---
 
-The KiwiPit portfolio expansion roadmap is complete. As of 2026-05-31, all five phases are shipped to `main` and deployed at kiwipit.com:
+The Pitfolio portfolio expansion roadmap is complete. As of 2026-05-31, all five phases are shipped to `main` and deployed at dreudris.com:
 
 1. **Phase 1 — currency switcher** (USD / EUR / BRL), persisted via localStorage.
 2. **Phase 2 — multi-wallet inputs**, parallel lookup with one card per wallet.

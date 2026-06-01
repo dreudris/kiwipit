@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**KiwiPit** — a multi-chain crypto wallet viewer deployed at [dreudris.com](https://dreudris.com) via Cloudflare Workers (Static Assets + a small Worker for the Solana proxy).
+**Pitfolio** — a multi-chain crypto wallet viewer deployed at [dreudris.com](https://dreudris.com) via Cloudflare Workers (Static Assets + a small Worker for the Solana proxy). The project directory and Cloudflare Worker are still named `kiwipit` / `dreudris` (the old brand and the domain) — renaming those is a separate infrastructure task; only the user-facing brand is "Pitfolio".
 
 No build step for the frontend. Pure HTML/CSS/JS — edit and push to deploy.
 

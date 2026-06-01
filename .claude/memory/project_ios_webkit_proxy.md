@@ -1,13 +1,13 @@
 ---
 name: project-ios-webkit-proxy
-description: "KiwiPit — default new third-party browser fetches to a worker proxy because iOS WebKit silently fails with \"Load failed\""
+description: "Pitfolio — default new third-party browser fetches to a worker proxy because iOS WebKit silently fails with \"Load failed\""
 metadata: 
   node_type: memory
   type: project
   originSessionId: 4b0f6fda-73f7-4fb9-a04c-e72f901d178d
 ---
 
-For any new browser → third-party fetch in KiwiPit, ship it behind a same-origin `worker.js` proxy by default. Don't wait for an iOS user to report a failure.
+For any new browser → third-party fetch in Pitfolio, ship it behind a same-origin `worker.js` proxy by default. Don't wait for an iOS user to report a failure.
 
 **Why:** On 2026-05-31 the user reported an Ethereum address loading as "Load failed" in red. Direct curl to Routescan was 200/healthy, CORS was wildcard-open, and the lookup worked on desktop. The failure was iOS WebKit-specific — every iOS browser (Chrome, Brave, Edge) uses WebKit under the hood per Apple policy, so they all inherit Safari's opaque cross-origin fetch failures. The fix mirrored the Solana proxy: a `/api/evm/{chainId}` route in `worker.js` whitelisted to `account.balance` / `account.txlist`, with the client switched to same-origin. The string `"Load failed"` itself is the giveaway — desktop Chromium emits `"Failed to fetch"`, Firefox emits `"NetworkError when attempting to fetch resource"`.
 
