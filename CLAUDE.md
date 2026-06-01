@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**KiwiPit** — a multi-chain crypto wallet viewer deployed at [kiwipit.com](https://kiwipit.com) via Cloudflare Workers (Static Assets + a small Worker for the Solana proxy).
+**KiwiPit** — a multi-chain crypto wallet viewer deployed at [dreudris.com](https://dreudris.com) via Cloudflare Workers (Static Assets + a small Worker for the Solana proxy).
 
 No build step for the frontend. Pure HTML/CSS/JS — edit and push to deploy.
 
@@ -80,7 +80,7 @@ Quick file map (each file's role at a glance — details in the bullets below):
 
 > **Deployment is Cloudflare Workers Static Assets, not Pages.** The Pages-only `functions/` directory convention does NOT work here — dynamic routes must live in `worker.js` behind the `ASSETS` binding.
 
-> **`assets.directory: "."` ships the entire repo root as static files.** Anything you drop in the root is publicly served at `https://kiwipit.com/<name>`. There is no build step or `dist/` filter — `CLAUDE.md`, `README.md`, and `wrangler.jsonc` happen to be harmless, but never put secrets, large binaries, or scratch files in the root. New tooling output belongs in a gitignored subdirectory (or a sibling repo), not at the root.
+> **`assets.directory: "."` ships the entire repo root as static files.** Anything you drop in the root is publicly served at `https://dreudris.com/<name>`. There is no build step or `dist/` filter — `CLAUDE.md`, `README.md`, and `wrangler.jsonc` happen to be harmless, but never put secrets, large binaries, or scratch files in the root. New tooling output belongs in a gitignored subdirectory (or a sibling repo), not at the root.
 
 ## Code flow in `app.js`
 
@@ -143,18 +143,18 @@ All APIs are free, no API key required. CoinGecko provides USD prices for all ch
 
 ## Deployment
 
-Cloudflare Workers auto-deploys on every push to `main` (Workers Builds connected to the repo). Custom domain `kiwipit.com` is managed in the Cloudflare dashboard.
+Cloudflare Workers auto-deploys on every push to `main` (Workers Builds connected to the repo). The Worker is named `dreudris` (see `wrangler.jsonc`) and its custom domain `dreudris.com` is managed in the Cloudflare dashboard.
 
 After deploy, smoke-test both proxies:
 
 ```bash
 # Solana — Wrapped SOL mint, always has a non-zero rent-exempt balance
-curl -sX POST https://kiwipit.com/api/solana \
+curl -sX POST https://dreudris.com/api/solana \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getBalance","params":["So11111111111111111111111111111111111111112"]}'
 
 # EVM — Vitalik's address on Ethereum mainnet, always present
-curl -s 'https://kiwipit.com/api/evm/1?module=account&action=balance&address=0xd8dA6BF26964aF9D7eeD9e03E53415D37aA96045'
+curl -s 'https://dreudris.com/api/evm/1?module=account&action=balance&address=0xd8dA6BF26964aF9D7eeD9e03E53415D37aA96045'
 ```
 
 Expect Solana: `{"jsonrpc":"2.0","result":{"context":{...},"value":<lamports>},"id":1}` — not a 404 (route missing), not `{"error":"All Solana upstreams failed"}` (every upstream rejected the worker's egress IP).

@@ -7,7 +7,7 @@ metadata:
   originSessionId: 4b0f6fda-73f7-4fb9-a04c-e72f901d178d
 ---
 
-For multi-feature initiatives on KiwiPit, ship one phase per commit and pause for the user to verify on kiwipit.com (auto-deployed by Cloudflare Workers Builds on push to `main`) before starting the next phase. The user signals "go" / "approved" / "worked" between phases.
+For multi-feature initiatives on KiwiPit, ship one phase per commit and pause for the user to verify on dreudris.com (auto-deployed by Cloudflare Workers Builds on push to `main`) before starting the next phase. The user signals "go" / "approved" / "worked" between phases.
 
 **Why:** This is the documented workflow in CLAUDE.md and the user followed it consistently across all 5 portfolio phases. Each phase pause caught real issues — Phase 4 surfaced the iOS WebKit "Load failed" bug on Routescan that desktop testing never would have, and the fix landed as its own focused commit between Phases 4 and 5 rather than getting bundled into the next phase. Small phases also keep the diff reviewable on a phone (the user tests on iOS).
 
