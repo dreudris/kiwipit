@@ -175,6 +175,39 @@ Expect Solana: `{"jsonrpc":"2.0","result":{"context":{...},"value":<lamports>},"
 
 Expect EVM: `{"status":"1","message":"OK","result":"<wei>"}` — not `{"status":"0","message":"chain not allowed"}` (chainId off the whitelist) or `{"status":"0","message":"proxy error: ..."}` (upstream fetch failed).
 
+## Adding a new project on a subdomain of dreudris.com
+
+Each new GitHub repo gets its own subdomain (`<project>.dreudris.com`) and its own Cloudflare Worker. The root domain `dreudris.com` always points to whatever is currently "main". To promote a project to the root, move the custom domain in the dashboard (Settings → Domains & Routes: remove from old Worker, add to new one).
+
+### Steps for a new project
+
+1. **In the Cloudflare dashboard:** Workers & Pages → Create → Connect to Git → select the new repo. Give the Worker a name (e.g. `myproject`). Complete the wizard — Cloudflare provisions the Worker and wires up auto-deploy from `main`.
+
+2. **In the new repo's `wrangler.jsonc`:** add the subdomain as a custom domain:
+   ```jsonc
+   "routes": [
+     { "pattern": "myproject.dreudris.com", "custom_domain": true }
+   ]
+   ```
+   The `custom_domain: true` flag is what tells Cloudflare "create the DNS record for me and make the Worker the origin" — without it Cloudflare would look for an existing DNS record and fail.
+
+3. **Commit and push to `main`.** Workers Builds runs `wrangler deploy`, which reads the `routes` entry and provisions the DNS record + TLS certificate automatically.
+
+4. **Wait ~2 minutes**, then open `https://myproject.dreudris.com` in a browser. If it doesn't load immediately, wait a bit longer — DNS propagation and cert issuance can take a few minutes. A new subdomain that was just created is especially prone to local DNS caching: your browser/OS caches the "not found" answer. If in doubt, test from a different network (e.g. mobile data) where no negative cache exists.
+
+### What not to use
+
+- `"custom_domains": [{ "hostname": "..." }]` — this top-level key does **not** exist in the wrangler schema; Cloudflare silently ignores it. The correct key is `"routes"` with `"custom_domain": true` on each entry.
+
+### Current subdomain map
+
+| Subdomain | Worker | Repo |
+|-----------|--------|------|
+| `dreudris.com` | `dreudris` | dreudris/kiwipit |
+| `kiwipit.dreudris.com` | `dreudris` | dreudris/kiwipit |
+
+Update this table when new projects are added.
+
 ## Claude memory in this repo
 
 Claude Code's auto-memory files live in this repo at `.claude/memory/` (versioned in git, indexed by `.claude/memory/MEMORY.md`). The Claude Code harness auto-loads memory from `~/.claude/projects/-home-<user>-kiwipit/memory/`, so on each clone the user creates a symlink:
