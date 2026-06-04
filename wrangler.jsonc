@@ -10,6 +10,9 @@
     "directory": ".",
     "binding": "ASSETS"
   },
+  "custom_domains": [
+    { "hostname": "kiwipit.dreudris.com" }
+  ],
   "compatibility_flags": [
     "nodejs_compat"
   ]
