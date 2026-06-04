@@ -10,8 +10,8 @@
     "directory": ".",
     "binding": "ASSETS"
   },
-  "custom_domains": [
-    { "hostname": "kiwipit.dreudris.com" }
+  "routes": [
+    { "pattern": "kiwipit.dreudris.com", "custom_domain": true }
   ],
   "compatibility_flags": [
     "nodejs_compat"
