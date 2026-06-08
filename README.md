@@ -1,6 +1,6 @@
 # 🥝 Pitfolio
 
-**Live at [dreudris.com](https://dreudris.com)** — a multi-chain crypto wallet viewer.
+**Live at [kiwipit.dreudris.com](https://kiwipit.dreudris.com)** — a multi-chain crypto wallet viewer.
 
 Paste any wallet address (or several) and see balances and recent transactions across 14 chains. No accounts, no API keys, no tracking.
 
@@ -27,7 +27,7 @@ Data sources (all free, no key): mempool.space, Routescan, Blockchair, TronGrid,
 
 ```mermaid
 flowchart LR
-    Browser["🥝 Browser<br/>dreudris.com"]
+    Browser["🥝 Browser<br/>kiwipit.dreudris.com"]
     Worker["Cloudflare Worker<br/>worker.js"]
     Assets[("Static assets<br/>index.html · app.js · style.css")]
     Solana[("Solana RPC<br/>leorpc → mainnet-beta")]
@@ -84,7 +84,7 @@ Most chains' APIs are happy to answer requests directly from your browser. But t
 - **Solana**: public RPC servers return HTTP 403 ("Forbidden") to browser requests on purpose.
 - **EVM transaction lists (Routescan)**: work on desktop but mysteriously fail on iPhones with a generic "Load failed" error. (Every browser on iOS — even Chrome and Brave — is forced by Apple to use Safari's engine underneath, so this affects everyone with an iPhone.)
 
-The fix is to put a tiny middle-man on Cloudflare's servers. The browser asks `https://dreudris.com/api/solana` (same domain as our site, so no browser blocks), and `worker.js` forwards that request to Solana's RPC and pipes the answer back. From the browser's point of view, it's just talking to itself.
+The fix is to put a tiny middle-man on Cloudflare's servers. The browser asks `https://kiwipit.dreudris.com/api/solana` (same domain as our site, so no browser blocks), and `worker.js` forwards that request to Solana's RPC and pipes the answer back. From the browser's point of view, it's just talking to itself.
 
 `worker.js` is intentionally minimal: it inspects the URL, and if it's `/api/solana` or `/api/evm/...` it proxies; otherwise it hands the request to the `ASSETS` binding, which serves the matching static file (`index.html`, `app.js`, etc.).
 

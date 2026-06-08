@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-**Pitfolio** — a multi-chain crypto wallet viewer deployed at [dreudris.com](https://dreudris.com) via Cloudflare Workers (Static Assets + a small Worker for the Solana proxy). The project directory and Cloudflare Worker are still named `kiwipit` / `dreudris` (the old brand and the domain) — renaming those is a separate infrastructure task; only the user-facing brand is "Pitfolio".
+**Pitfolio** — a multi-chain crypto wallet viewer deployed at [kiwipit.dreudris.com](https://kiwipit.dreudris.com) via Cloudflare Workers (Static Assets + a small Worker for the Solana proxy). The project directory and Cloudflare Worker are both named `kiwipit`; the user-facing brand is "Pitfolio". The owner uses `dreudris.com` only as a parent domain for per-project test subdomains (`<project>.dreudris.com`) and serves nothing from the bare root.
 
 No build step for the frontend. Pure HTML/CSS/JS — edit and push to deploy.
 
@@ -93,7 +93,7 @@ Quick file map (each file's role at a glance — details in the bullets below):
 
 > **Deployment is Cloudflare Workers Static Assets, not Pages.** The Pages-only `functions/` directory convention does NOT work here — dynamic routes must live in `worker.js` behind the `ASSETS` binding.
 
-> **`assets.directory: "."` ships the entire repo root as static files.** Anything you drop in the root is publicly served at `https://dreudris.com/<name>`. There is no build step or `dist/` filter — `CLAUDE.md`, `README.md`, and `wrangler.jsonc` happen to be harmless, but never put secrets, large binaries, or scratch files in the root. New tooling output belongs in a gitignored subdirectory (or a sibling repo), not at the root.
+> **`assets.directory: "."` ships the entire repo root as static files.** Anything you drop in the root is publicly served at `https://kiwipit.dreudris.com/<name>`. There is no build step or `dist/` filter — `CLAUDE.md`, `README.md`, and `wrangler.jsonc` happen to be harmless, but never put secrets, large binaries, or scratch files in the root. New tooling output belongs in a gitignored subdirectory (or a sibling repo), not at the root.
 
 ## Code flow
 
@@ -155,20 +155,22 @@ All APIs are free, no API key required. CoinGecko provides USD prices for all ch
 
 ## Deployment
 
-Cloudflare Workers auto-deploys on every push to `main` (Workers Builds connected to the repo). The Worker is named `dreudris` (see `wrangler.jsonc`) and its custom domain `dreudris.com` is managed in the Cloudflare dashboard.
+Cloudflare Workers auto-deploys on every push to `main` (Workers Builds connected to the repo). The live Worker is named **`kiwipit`** and serves the custom domain `kiwipit.dreudris.com` — both declared in `wrangler.jsonc` (`name` + `routes`). The root `dreudris.com` is intentionally unused. An older Worker named `dreudris` previously served this repo; it has been retired (Git build connection removed, custom domain released) and left dormant rather than deleted — Cloudflare has no literal "pause", so a Worker with no triggers is the equivalent.
 
-> **Renaming the Worker requires dashboard work, not just a config edit.** Workers Builds is bound to a specific Worker by its dashboard connection — editing `name:` in `wrangler.jsonc` alone has no effect; the deploy keeps landing on the original Worker. To actually rename: in the dashboard, disconnect Workers Builds from the existing Worker (Settings → Builds), then **Workers & Pages → Create → Connect to Git** with the new name, which provisions a fresh Worker. Move custom domains (e.g. `dreudris.com`) separately via Settings → Domains & Routes — they don't follow the rename. Delete the old Worker once verified.
+> **Migration note (delete once verified):** the `dreudris` → `kiwipit` rename is a dashboard operation, not a config edit. If `https://kiwipit.dreudris.com` is not yet served by a Worker named `kiwipit`, the dashboard steps below haven't been completed yet: (1) on the old `dreudris` Worker, disconnect Workers Builds and remove the `kiwipit.dreudris.com` custom domain; (2) Workers & Pages → Create → Connect to Git → this repo, named `kiwipit`. Order matters — release the subdomain from `dreudris` first, or the new Worker's first deploy fails with a domain conflict (a custom domain binds to exactly one Worker).
+
+> **Renaming the Worker requires dashboard work, not just a config edit.** Workers Builds is bound to a specific Worker by its dashboard connection — editing `name:` in `wrangler.jsonc` alone has no effect; the deploy keeps landing on the original Worker. To actually rename: in the dashboard, disconnect Workers Builds from the existing Worker (Settings → Builds), then **Workers & Pages → Create → Connect to Git** with the new name, which provisions a fresh Worker. Move custom domains (e.g. `kiwipit.dreudris.com`) separately via Settings → Domains & Routes — they don't follow the rename, and releasing the domain from the old Worker first is required or the new Worker's deploy hits a domain conflict. Delete (or leave dormant) the old Worker once verified.
 
 After deploy, smoke-test both proxies:
 
 ```bash
 # Solana — Wrapped SOL mint, always has a non-zero rent-exempt balance
-curl -sX POST https://dreudris.com/api/solana \
+curl -sX POST https://kiwipit.dreudris.com/api/solana \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"getBalance","params":["So11111111111111111111111111111111111111112"]}'
 
 # EVM — Vitalik's address on Ethereum mainnet, always present
-curl -s 'https://dreudris.com/api/evm/1?module=account&action=balance&address=0xd8dA6BF26964aF9D7eeD9e03E53415D37aA96045'
+curl -s 'https://kiwipit.dreudris.com/api/evm/1?module=account&action=balance&address=0xd8dA6BF26964aF9D7eeD9e03E53415D37aA96045'
 ```
 
 Expect Solana: `{"jsonrpc":"2.0","result":{"context":{...},"value":<lamports>},"id":1}` — not a 404 (route missing), not `{"error":"All Solana upstreams failed"}` (every upstream rejected the worker's egress IP).
@@ -177,7 +179,7 @@ Expect EVM: `{"status":"1","message":"OK","result":"<wei>"}` — not `{"status":
 
 ## Adding a new project on a subdomain of dreudris.com
 
-Each new GitHub repo gets its own subdomain (`<project>.dreudris.com`) and its own Cloudflare Worker. The root domain `dreudris.com` always points to whatever is currently "main". To promote a project to the root, move the custom domain in the dashboard (Settings → Domains & Routes: remove from old Worker, add to new one).
+Each new GitHub repo gets its own subdomain (`<project>.dreudris.com`) and its own Cloudflare Worker, named to match the subdomain (e.g. Worker `kiwipit` ↔ `kiwipit.dreudris.com`). The bare root `dreudris.com` is intentionally left unattached — the owner uses subdomains only. (If you ever did want to serve something at the root, you'd move that custom domain onto a Worker in the dashboard: Settings → Domains & Routes.)
 
 ### Steps for a new project
 
@@ -203,8 +205,9 @@ Each new GitHub repo gets its own subdomain (`<project>.dreudris.com`) and its o
 
 | Subdomain | Worker | Repo |
 |-----------|--------|------|
-| `dreudris.com` | `dreudris` | dreudris/kiwipit |
-| `kiwipit.dreudris.com` | `dreudris` | dreudris/kiwipit |
+| `kiwipit.dreudris.com` | `kiwipit` | dreudris/kiwipit |
+
+The bare root `dreudris.com` is intentionally unattached — the owner deploys each project only to its own `<project>.dreudris.com` subdomain. The legacy `dreudris` Worker is retired/dormant (no Git connection, no routes).
 
 Update this table when new projects are added.
 
